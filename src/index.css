@@ -1,0 +1,162 @@
+/* Slipstream — global styles. Fonts are loaded in index.html. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #06060b;
+}
+
+#root {
+  min-height: 100vh;
+  background: #06060b;
+  color: #F3F1F8;
+  font-family: 'Archivo', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Design keyframes (ported verbatim from the Slipstream design) */
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes bloom {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(18px, -22px) scale(1.12); }
+}
+@keyframes dash {
+  to { stroke-dashoffset: -1000; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fade-in 0.35s ease forwards; }
+
+/* Per-tab view transition: a soft slide + fade on every screen switch. Pure
+   CSS, so it persists when the app is wrapped into a native (App/Play) build.
+   Animates ONLY transform + opacity (GPU compositor properties) and promotes
+   the view to its own layer, so it runs at the display's native refresh rate
+   even while the glass backdrop-filters underneath are expensive. */
+@keyframes view-in {
+  0%   { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.98); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+.view {
+  animation: view-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+/* Hide scrollbars to match the mobile design */
+::-webkit-scrollbar { width: 0; height: 0; }
+* { scrollbar-width: none; }
+
+.hscroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tactile press feedback on every control (iOS-style spring). All hover/press
+   motion is transform/opacity-only so it stays on the GPU compositor. */
+button, input {
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  position: relative;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.22s ease, color 0.22s ease, opacity 0.2s ease;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+/* Soft specular sheen that fades in on hover — pre-rendered gradient whose
+   only animated property is opacity (compositor-cheap, no repaints). */
+button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(70% 120% at 50% 0%, rgba(255, 255, 255, 0.16), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  button:hover { transform: translateY(-1.5px) scale(1.02); }
+  button:hover::after { opacity: 1; }
+}
+button:active { transform: translateY(0) scale(0.95); }
+
+/* Liquid-glass rim light: a bright specular hairline along the top/edge that
+   reads like real glass catching light. Apply alongside an inline glass(). The
+   element must set its own border-radius (it does) — we inherit it here. */
+.lg { position: relative; isolation: isolate; }
+.lg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.65),
+    rgba(255, 255, 255, 0.08) 32%,
+    transparent 52%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Interactive glass card: gentle lift + glow wash on hover/press. The lift is
+   pure transform and the glow is an opacity-only pseudo-element overlay, so
+   hovering never triggers repaints of the blurred glass underneath. */
+.card-int {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.card-int::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(90% 130% at 50% -10%, rgba(255, 255, 255, 0.10), transparent 60%),
+    radial-gradient(60% 100% at 90% 110%, rgba(255, 47, 160, 0.08), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 2;
+}
+@media (hover: hover) and (pointer: fine) {
+  .card-int:hover { transform: translateY(-4px) scale(1.012); }
+  .card-int:hover::after { opacity: 1; }
+}
+.card-int:active { transform: translateY(-1px) scale(0.988); }
+
+/* Reduced-motion: pause only the decorative infinite loops (blooms, ticker).
+   Functional transitions (tab switch, hover, press) are short and purposeful,
+   so they stay on — note Windows reports reduced-motion whenever the OS
+   "Animation effects" toggle is off, which is common on desktops. */
+@media (prefers-reduced-motion: reduce) {
+  [style*='bloom'], [style*='ticker'] { animation: none !important; }
+}
