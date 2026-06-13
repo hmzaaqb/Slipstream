@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { FONT, COLOR, glass, avatarStyle } from '../ui/styles';
 import { Bolt } from '../ui/icons';
-import { initials } from '../members';
+import { DISCLAIMER_SHORT, LegalFooter } from './Legal';
+
+// Dollar amount each "mirror" order places. Keep in sync with App.onMirror.
+const MIRROR_AMOUNT = 100;
 
 function ConnectCard({ onConnect, connecting, connectError }) {
   const [key, setKey] = useState('');
@@ -85,7 +88,7 @@ function AccountPanel({ account, onDisconnect, onRefresh }) {
   );
 }
 
-function FollowedRow({ pol, onMirror, orderState, onOpenProfile }) {
+function FollowedRow({ pol, onRequestMirror, orderState, onOpenProfile }) {
   const recentBuys = pol.trades.filter((t) => t.type === 'buy').slice(0, 4);
   return (
     <div style={{ marginTop: 12, padding: 16, borderRadius: 20, ...glass('soft', { borderRadius: 20 }) }}>
@@ -104,11 +107,11 @@ function FollowedRow({ pol, onMirror, orderState, onOpenProfile }) {
           const key = `${pol.name}:${t.symbol}`;
           const st = orderState[key];
           return (
-            <button key={t.id} disabled={st === 'pending' || st === 'done'} onClick={() => onMirror(pol, t)}
+            <button key={t.id} disabled={st === 'pending' || st === 'done'} onClick={() => onRequestMirror(pol, t)}
               style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 12px', borderRadius: 12, cursor: st ? 'default' : 'pointer', border: '1px solid rgba(46,229,166,0.4)', background: st === 'done' ? 'rgba(46,229,166,0.22)' : 'rgba(46,229,166,0.1)', color: COLOR.green, fontFamily: FONT.black, fontSize: 11, letterSpacing: '0.5px' }}>
               {t.symbol}
               <span style={{ fontFamily: FONT.mono, fontSize: 9, color: 'rgba(243,241,248,0.6)' }}>
-                {st === 'pending' ? '…' : st === 'done' ? '✓ FILLED' : st === 'error' ? '✕ ERR' : 'MIRROR $100'}
+                {st === 'pending' ? '…' : st === 'done' ? '✓ FILLED' : st === 'error' ? '✕ ERR' : `MIRROR $${MIRROR_AMOUNT}`}
               </span>
             </button>
           );
@@ -118,7 +121,67 @@ function FollowedRow({ pol, onMirror, orderState, onOpenProfile }) {
   );
 }
 
+// Confirmation gate shown before any order is placed. Even though this is paper
+// trading today, the same flow protects users if live trading is ever enabled —
+// no order goes out without an explicit, informed confirmation.
+function MirrorConfirm({ pending, onCancel, onConfirm }) {
+  const [ack, setAck] = useState(false);
+  if (!pending) return null;
+  const { pol, trade } = pending;
+  return (
+    <div onClick={onCancel} style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(4,4,9,0.6)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 430, maxWidth: '100%', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: '22px 24px 30px', ...glass('strong', { borderTopLeftRadius: 28, borderTopRightRadius: 28, border: '1px solid rgba(255,255,255,0.16)' }) }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <div style={{ width: 42, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.18)' }} />
+        </div>
+
+        <div style={{ fontFamily: FONT.mono, fontSize: 10, letterSpacing: '2px', color: 'rgba(243,241,248,0.45)' }}>CONFIRM MIRROR ORDER</div>
+        <div style={{ fontFamily: FONT.black, fontSize: 22, letterSpacing: '-0.5px', marginTop: 8 }}>
+          Buy ${MIRROR_AMOUNT} of {trade.symbol}
+        </div>
+        <div style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 13.5, lineHeight: 1.6, color: 'rgba(243,241,248,0.65)', marginTop: 8 }}>
+          Mirroring {pol.name}'s {trade.symbol} buy. This places a <strong>${MIRROR_AMOUNT} market order</strong> in your connected Alpaca <strong style={{ color: COLOR.green }}>paper</strong> account.
+        </div>
+
+        <div style={{ marginTop: 16, padding: '13px 15px', borderRadius: 14, background: 'rgba(255,47,160,0.08)', border: '1px solid rgba(255,47,160,0.3)' }}>
+          <div style={{ fontFamily: FONT.black, fontSize: 12, color: COLOR.pink, letterSpacing: '0.3px' }}>⚠ Risk warning</div>
+          <div style={{ fontFamily: FONT.archivo, fontWeight: 500, fontSize: 12, lineHeight: 1.55, color: 'rgba(243,241,248,0.7)', marginTop: 6 }}>
+            This is not investment advice. Copying trades can lose money. Disclosures may be delayed, so prices will differ from when the politician traded. You are solely responsible for every order.
+          </div>
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 16, cursor: 'pointer', fontFamily: FONT.archivo, fontWeight: 600, fontSize: 12.5, color: 'rgba(243,241,248,0.7)' }}>
+          <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} style={{ flex: 'none', width: 18, height: 18, marginTop: 1, accentColor: COLOR.pink, cursor: 'pointer' }} />
+          <span>I understand the risks and want to place this order.</span>
+        </label>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: 15, borderRadius: 16, cursor: 'pointer', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#F3F1F8', fontFamily: FONT.black, fontSize: 13, letterSpacing: '0.5px' }}>CANCEL</button>
+          <button
+            disabled={!ack}
+            onClick={() => onConfirm(pol, trade)}
+            style={{ flex: 1, padding: 15, borderRadius: 16, cursor: ack ? 'pointer' : 'not-allowed', border: 'none', background: 'linear-gradient(160deg,#2EE5A6,#16B98A)', color: '#04130D', fontFamily: FONT.black, fontSize: 13, letterSpacing: '0.5px', opacity: ack ? 1 : 0.5 }}
+          >
+            PLACE ORDER
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Copy({ connected, account, connecting, connectError, onConnect, onDisconnect, onRefresh, followed, onMirror, orderState, onOpenProfile }) {
+  const [pending, setPending] = useState(null);
+
+  const requestMirror = (pol, trade) => {
+    if (!connected) return; // mirroring disabled until Alpaca is linked
+    setPending({ pol, trade });
+  };
+  const confirmMirror = (pol, trade) => {
+    setPending(null);
+    onMirror(pol, trade);
+  };
+
   return (
     <div className="fade-in">
       <div style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '3px', color: 'rgba(243,241,248,0.45)', marginTop: 22 }}>COPY TRADE</div>
@@ -137,7 +200,7 @@ export default function Copy({ connected, account, connecting, connectError, onC
         </div>
       ) : (
         followed.map((pol) => (
-          <FollowedRow key={pol.name} pol={pol} onMirror={connected ? onMirror : () => {}} orderState={orderState} onOpenProfile={onOpenProfile} />
+          <FollowedRow key={pol.name} pol={pol} onRequestMirror={requestMirror} orderState={orderState} onOpenProfile={onOpenProfile} />
         ))
       )}
 
@@ -146,6 +209,15 @@ export default function Copy({ connected, account, connecting, connectError, onC
           Connect Alpaca above to enable mirroring.
         </div>
       )}
+
+      {/* Always-visible financial disclaimer on the trading surface. */}
+      <div style={{ marginTop: 24, padding: '14px 16px', borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ fontFamily: FONT.mono, fontSize: 9, letterSpacing: '1.5px', color: 'rgba(243,241,248,0.4)' }}>DISCLAIMER</div>
+        <div style={{ fontFamily: FONT.archivo, fontWeight: 500, fontSize: 11, lineHeight: 1.55, color: 'rgba(243,241,248,0.5)', marginTop: 6 }}>{DISCLAIMER_SHORT}</div>
+        <LegalFooter align="left" style={{ marginTop: 10 }} />
+      </div>
+
+      <MirrorConfirm pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMirror} />
     </div>
   );
 }

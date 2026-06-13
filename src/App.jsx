@@ -14,6 +14,7 @@ import {
 } from './api';
 import * as alpaca from './alpaca';
 import * as auth from './auth';
+import { hasSupabase } from './supabase';
 import Auth from './components/Auth';
 import { Blooms, StatusBar, Header, Ticker, PartySentiment, BottomNav } from './components/Shell';
 import Leaders from './components/Leaders';
@@ -32,13 +33,17 @@ const loadFollowed = () => {
 };
 
 export default function App() {
-  // auth gate
+  // auth gate. getUser() is an optimistic sync snapshot (authoritative in demo
+  // mode, null in Supabase mode until the real session resolves below).
   const [user, setUser] = useState(() => auth.getUser());
+  // In backend mode, wait for the session to resolve before deciding what to
+  // render (avoids a flash of the sign-in screen for already-logged-in users).
+  const [authReady, setAuthReady] = useState(!hasSupabase);
 
   // data
   const [trades, setTrades] = useState([]);
   const [source, setSource] = useState('live');
-  const [generatedAt, setGeneratedAt] = useState(Date.now());
+  const [generatedAt, setGeneratedAt] = useState(() => Date.now());
   const [priceMap, setPriceMap] = useState(null);
   const [pricesLoading, setPricesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -66,6 +71,24 @@ export default function App() {
   const [connectError, setConnectError] = useState(null);
   const [orderState, setOrderState] = useState({});
 
+  /* ----- resolve auth session (Supabase) ----- */
+  useEffect(() => {
+    let alive = true;
+    auth.initAuth().then((u) => {
+      if (!alive) return;
+      setUser(u);
+      setAuthReady(true);
+    });
+    // React to sign-in/out, token refresh, and OAuth redirects.
+    const unsubscribe = auth.onAuthChange((u) => {
+      if (alive) setUser(u);
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, []);
+
   /* ----- load data ----- */
   useEffect(() => {
     let alive = true;
@@ -83,7 +106,7 @@ export default function App() {
         if (!alive) return;
         setPriceMap(pm);
         setPricesLoading(false);
-      } catch (e) {
+      } catch {
         if (!alive) return;
         setError('Failed to load congressional trades.');
         setLoading(false);
@@ -217,14 +240,26 @@ export default function App() {
       .catch(() => setOrderState((s) => ({ ...s, [key]: 'error' })));
   }, [onRefreshAccount]);
 
-  const onSignOut = useCallback(() => {
+  const onSignOut = useCallback(async () => {
     if (!window.confirm('Sign out of Slipstream?')) return;
-    auth.signOut();
+    await auth.signOut();
     setUser(null);
   }, []);
 
   /* ----- render ----- */
   const updatedLabel = `updated ${timeAgo(new Date(generatedAt).toISOString()).toLowerCase()}`.replace('updated today', 'updated just now');
+
+  // Still confirming the session (backend mode): hold on the glass shell with a
+  // spinner so logged-in users don't flash the sign-in screen.
+  if (!authReady) {
+    return (
+      <div style={{ position: 'relative', width: 430, maxWidth: '100%', minHeight: '100vh', margin: '0 auto', background: COLOR.bg, fontFamily: FONT.archivo, overflow: 'hidden', color: COLOR.text }}>
+        <Blooms />
+        <StatusBar />
+        <LoadingState />
+      </div>
+    );
+  }
 
   // Not signed in: show the auth gate inside the same glass shell.
   if (!user) {

@@ -15,6 +15,12 @@ npm run dev
 
 Open the printed local URL. The app loads on the **Leaders** tab.
 
+> **Going to production?** See [`SETUP.md`](SETUP.md) for the full launch guide:
+> Supabase auth (email + Google/Apple), server-side FMP/Alpaca key proxying via
+> Edge Functions, the database schema, and the pre-launch checklist. The app is
+> backend-optional — it runs in demo mode with no config and upgrades to the
+> real backend once the Supabase env vars are set.
+
 > **Why `npm run dev` (not just opening a file):** Alpaca's brokerage API blocks
 > direct browser calls (CORS). The Vite dev server proxies `/alpaca/*` to
 > `paper-api.alpaca.markets`, so connecting / mirroring only works under

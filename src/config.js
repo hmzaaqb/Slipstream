@@ -37,6 +37,12 @@ export const FMP_STABLE = 'https://financialmodelingprep.com/stable';
 export const FMP_V4 = 'https://financialmodelingprep.com/api/v4';
 export const FMP_V3 = 'https://financialmodelingprep.com/api/v3';
 
+// When true (and Supabase is configured), congressional + price data is fetched
+// through the `fmp` Edge Function instead of calling FMP directly — so the paid
+// FMP key lives server-side and never ships to the browser. Toggle via
+// VITE_USE_BACKEND_PROXY in .env. Falls back to direct FMP calls when off.
+export const USE_BACKEND_PROXY = import.meta.env.VITE_USE_BACKEND_PROXY === 'true';
+
 // How many pages of the congressional feeds to pull (each ~100 trades). Higher
 // = more historical trades = more unique politicians on the leaderboard, at the
 // cost of a slightly longer initial load.

@@ -11,7 +11,8 @@
 // Everything degrades gracefully: if the live API is unreachable we fall back
 // to a bundled sample dataset, and if prices can't be fetched ROI shows "—".
 
-import { FMP_STABLE, FMP_V4, FMP_V3, getFmpKey, FEED_PAGES, TRADES_TTL, PRICE_TTL, DEMO_MODE } from './config';
+import { FMP_STABLE, FMP_V4, FMP_V3, getFmpKey, FEED_PAGES, TRADES_TTL, PRICE_TTL, DEMO_MODE, USE_BACKEND_PROXY } from './config';
+import { functionsBase, supabase, hasSupabase } from './supabase';
 import { resolveMember, stateFromDistrict, avatarColors, initials } from './members';
 import { SAMPLE_TRADES, COMPANIES, buildSamplePriceMap } from './sample-data';
 
@@ -38,11 +39,11 @@ const cacheSet = (key, data) => {
   }
 };
 
-async function fetchJson(url, timeout = 20000) {
+async function fetchJson(url, { timeout = 20000, headers } = {}) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), timeout);
   try {
-    const res = await fetch(url, { signal: ctrl.signal });
+    const res = await fetch(url, { signal: ctrl.signal, headers });
     if (!res.ok) return null;
     const data = await res.json();
     return data;
@@ -51,6 +52,40 @@ async function fetchJson(url, timeout = 20000) {
   } finally {
     clearTimeout(id);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* FMP access — direct (key in browser) or via the Edge Function proxy */
+/* ------------------------------------------------------------------ */
+
+const FMP_HOSTS = { stable: FMP_STABLE, v4: FMP_V4, v3: FMP_V3 };
+
+// Whether to route FMP through the server-side proxy (keeps the key secret).
+const proxyOn = () => USE_BACKEND_PROXY && hasSupabase && Boolean(functionsBase);
+
+// Fetch from FMP by host + path + query. In proxy mode the request goes to the
+// `fmp` Edge Function (which injects the real key); otherwise it calls FMP
+// directly with the key appended.
+async function fmpFetch(host, path, query = {}) {
+  const qs = new URLSearchParams(query);
+  if (proxyOn()) {
+    qs.set('host', host);
+    qs.set('path', path);
+    // Authorize with the user's session (falls back to the public anon key,
+    // which is itself a valid JWT) so the function's verify_jwt gate passes.
+    let token = supabase?.supabaseKey;
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) token = data.session.access_token;
+    } catch {
+      /* use anon key */
+    }
+    return fetchJson(`${functionsBase}/fmp?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: supabase?.supabaseKey },
+    });
+  }
+  qs.set('apikey', getFmpKey());
+  return fetchJson(`${FMP_HOSTS[host]}/${path}?${qs.toString()}`);
 }
 
 // Run async tasks with a concurrency cap.
@@ -177,23 +212,21 @@ function sectorFromName(name) {
 /* ------------------------------------------------------------------ */
 
 async function fetchChamber(chamber) {
-  const key = getFmpKey();
   const out = [];
 
   // 1) modern stable API (paged "latest")
   const latestPath = chamber === 'senate' ? 'senate-latest' : 'house-latest';
   for (let p = 0; p < FEED_PAGES; p++) {
-    const data = await fetchJson(`${FMP_STABLE}/${latestPath}?page=${p}&limit=100&apikey=${key}`);
+    const data = await fmpFetch('stable', latestPath, { page: p, limit: 100 });
     if (Array.isArray(data) && data.length) out.push(...data);
     else break;
   }
   if (out.length) return out;
 
   // 2) legacy v4 RSS feed (paged)
-  const rssPath = chamber === 'senate' ? 'senate-trading-rss-feed' : 'senate-disclosure-rss-feed';
   const v4rss = chamber === 'senate' ? 'senate-trading-rss-feed' : 'house-disclosure-rss-feed';
   for (let p = 0; p < FEED_PAGES; p++) {
-    const data = await fetchJson(`${FMP_V4}/${v4rss}?page=${p}&apikey=${key}`);
+    const data = await fmpFetch('v4', v4rss, { page: p });
     if (Array.isArray(data) && data.length) out.push(...data);
     else break;
   }
@@ -201,7 +234,7 @@ async function fetchChamber(chamber) {
 
   // 3) legacy v4 non-paged
   const v4flat = chamber === 'senate' ? 'senate-trading' : 'house-disclosure';
-  const flat = await fetchJson(`${FMP_V4}/${v4flat}?apikey=${key}`);
+  const flat = await fmpFetch('v4', v4flat);
   if (Array.isArray(flat) && flat.length) return flat;
 
   return [];
@@ -257,17 +290,16 @@ async function fetchHistory(symbol) {
   const cached = cacheGet(cacheKey, PRICE_TTL);
   if (cached) return cached;
 
-  const key = getFmpKey();
   let hist = null;
 
   // legacy v3 (line series is compact)
-  const v3 = await fetchJson(`${FMP_V3}/historical-price-full/${symbol}?serietype=line&apikey=${key}`);
+  const v3 = await fmpFetch('v3', `historical-price-full/${symbol}`, { serietype: 'line' });
   if (v3 && Array.isArray(v3.historical)) {
     hist = v3.historical.map((h) => ({ date: h.date, close: h.close }));
   }
   // modern stable
   if (!hist) {
-    const st = await fetchJson(`${FMP_STABLE}/historical-price-eod/light?symbol=${symbol}&apikey=${key}`);
+    const st = await fmpFetch('stable', 'historical-price-eod/light', { symbol });
     if (Array.isArray(st)) hist = st.map((h) => ({ date: h.date, close: h.close ?? h.price }));
   }
   if (!hist || !hist.length) return null;

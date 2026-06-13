@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { FONT, COLOR, glass } from '../ui/styles';
 import { Bolt, BackIcon } from '../ui/icons';
 import * as auth from '../auth';
+import { LegalModal, LegalLink, LegalFooter } from './Legal';
 
 /* ---------- shared styles (from the design) ---------- */
 
@@ -122,7 +123,7 @@ function Note({ error, info }) {
 
 /* ---------- screens ---------- */
 
-function Welcome({ go, polCount, tradeCount }) {
+function Welcome({ go, polCount }) {
   const features = [
     {
       tint: 'rgba(255,47,160,0.14)', border: 'rgba(255,47,160,0.4)',
@@ -188,6 +189,7 @@ function Welcome({ go, polCount, tradeCount }) {
       <button onClick={() => go('signup')} style={{ ...pinkCta, marginTop: 28, fontSize: 16, borderRadius: 20 }}>GET STARTED</button>
       <button onClick={() => go('signin')} style={{ ...glassBtn, marginTop: 12, padding: 17, letterSpacing: '1.5px', borderRadius: 20 }}>I ALREADY HAVE AN ACCOUNT</button>
       <div style={{ textAlign: 'center', fontFamily: FONT.mono, fontSize: 10, letterSpacing: '1px', color: 'rgba(243,241,248,0.35)', marginTop: 18 }}>Free forever · No card required</div>
+      <LegalFooter style={{ marginTop: 14 }} />
     </div>
   );
 }
@@ -209,18 +211,25 @@ function SocialButtons({ row, onSocial }) {
   );
 }
 
-function SignUp({ go, onDone, polCount, tradeCount }) {
+function SignUp({ go, onDone, openLegal, polCount, tradeCount }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [agreed, setAgreed] = useState(false);
   const [focused, setFocused] = useState(null);
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const onSocial = (provider) => {
+  const onSocial = async (provider) => {
     setError(null);
-    setInfo(`${provider} sign-in arrives at launch — use email below for now.`);
+    setInfo(null);
+    if (!agreed) return setError('Please accept the Terms & Privacy Policy to continue.');
+    try {
+      await auth.signInWithProvider(provider); // redirects when backend is configured
+    } catch (err) {
+      setInfo(err.message);
+    }
   };
 
   const submit = async (e) => {
@@ -230,9 +239,16 @@ function SignUp({ go, onDone, polCount, tradeCount }) {
     if (name.trim().length < 2) return setError('Enter your full name.');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) return setError('Enter a valid email address.');
     if (password.length < 8) return setError('Password must be at least 8 characters.');
+    if (!agreed) return setError('Please accept the Terms & Privacy Policy to continue.');
     setBusy(true);
     try {
-      onDone(await auth.signUp({ name, email, password }));
+      const { user, needsConfirmation } = await auth.signUp({ name, email, password });
+      if (needsConfirmation) {
+        setInfo(`Almost there — we sent a confirmation link to ${email.trim()}. Verify it, then sign in.`);
+        setBusy(false);
+        return;
+      }
+      onDone(user);
     } catch (err) {
       setError(err.message || 'Something went wrong. Try again.');
     } finally {
@@ -266,16 +282,26 @@ function SignUp({ go, onDone, polCount, tradeCount }) {
           <input type="password" placeholder="Password (8+ characters)" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} onFocus={() => setFocused('pw')} onBlur={() => setFocused(null)} style={inputStyle(focused === 'pw')} />
         </div>
 
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 18, cursor: 'pointer', fontFamily: FONT.archivo, fontWeight: 600, fontSize: 12, lineHeight: 1.55, color: 'rgba(243,241,248,0.6)' }}>
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+            style={{ flex: 'none', width: 18, height: 18, marginTop: 1, accentColor: COLOR.pink, cursor: 'pointer' }}
+          />
+          <span>
+            I agree to the <LegalLink doc="terms" onOpen={openLegal}>Terms of Service</LegalLink> and{' '}
+            <LegalLink doc="privacy" onOpen={openLegal}>Privacy Policy</LegalLink>, and I understand
+            Slipstream is <LegalLink doc="disclaimer" onOpen={openLegal}>not investment advice</LegalLink>.
+          </span>
+        </label>
+
         <Note error={error} info={info} />
 
-        <button type="submit" disabled={busy} style={{ ...pinkCta, marginTop: 18, opacity: busy ? 0.6 : 1 }}>
+        <button type="submit" disabled={busy} style={{ ...pinkCta, marginTop: 16, opacity: busy ? 0.6 : 1 }}>
           {busy ? 'ONE MOMENT…' : 'CREATE ACCOUNT'}
         </button>
       </form>
-
-      <div style={{ textAlign: 'center', fontFamily: FONT.mono, fontSize: 10, lineHeight: 1.7, letterSpacing: '0.5px', color: 'rgba(243,241,248,0.35)', marginTop: 16 }}>
-        By signing up you agree to our <span style={{ color: 'rgba(255,143,206,0.8)' }}>Terms</span> &amp; <span style={{ color: 'rgba(255,143,206,0.8)' }}>Privacy Policy</span>
-      </div>
 
       <div style={{ flex: 1 }} />
       <div style={{ textAlign: 'center', fontFamily: FONT.archivo, fontWeight: 600, fontSize: 14, color: 'rgba(243,241,248,0.5)', marginTop: 20 }}>
@@ -285,7 +311,7 @@ function SignUp({ go, onDone, polCount, tradeCount }) {
   );
 }
 
-function SignIn({ go, onDone }) {
+function SignIn({ go, onDone, openLegal }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [focused, setFocused] = useState(null);
@@ -293,9 +319,25 @@ function SignIn({ go, onDone }) {
   const [info, setInfo] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const onSocial = (provider) => {
+  const onSocial = async (provider) => {
     setError(null);
-    setInfo(`${provider} sign-in arrives at launch — use email for now.`);
+    setInfo(null);
+    try {
+      await auth.signInWithProvider(provider); // redirects when backend is configured
+    } catch (err) {
+      setInfo(err.message);
+    }
+  };
+
+  const onForgot = async () => {
+    setError(null);
+    setInfo(null);
+    try {
+      await auth.resetPassword(email);
+      setInfo(`If an account exists for ${email.trim()}, a reset link is on its way.`);
+    } catch (err) {
+      setInfo(err.message);
+    }
   };
 
   const submit = async (e) => {
@@ -332,7 +374,7 @@ function SignIn({ go, onDone }) {
           <input type="email" placeholder="Email address" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} onFocus={() => setFocused('email')} onBlur={() => setFocused(null)} style={inputStyle(focused === 'email')} />
           <input type="password" placeholder="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} onFocus={() => setFocused('pw')} onBlur={() => setFocused(null)} style={inputStyle(focused === 'pw')} />
         </div>
-        <div style={{ textAlign: 'right', fontFamily: FONT.archivo, fontWeight: 700, fontSize: 13, color: '#FF8FCE', marginTop: 12, cursor: 'pointer' }} onClick={() => setInfo('Password reset arrives with real accounts at launch.')}>
+        <div style={{ textAlign: 'right', fontFamily: FONT.archivo, fontWeight: 700, fontSize: 13, color: '#FF8FCE', marginTop: 12, cursor: 'pointer' }} onClick={onForgot}>
           Forgot password?
         </div>
 
@@ -349,6 +391,13 @@ function SignIn({ go, onDone }) {
       <div style={{ flex: 1 }} />
       <div style={{ textAlign: 'center', fontFamily: FONT.archivo, fontWeight: 600, fontSize: 14, color: 'rgba(243,241,248,0.5)', marginTop: 20 }}>
         New here? <span onClick={() => go('signup')} style={{ color: '#FF8FCE', fontWeight: 800, cursor: 'pointer' }}>Create an account</span>
+      </div>
+      <div style={{ textAlign: 'center', fontFamily: FONT.mono, fontSize: 10, letterSpacing: '0.5px', color: 'rgba(243,241,248,0.35)', marginTop: 12 }}>
+        <LegalLink doc="disclaimer" onOpen={openLegal}>Disclaimer</LegalLink>
+        {'  ·  '}
+        <LegalLink doc="terms" onOpen={openLegal}>Terms</LegalLink>
+        {'  ·  '}
+        <LegalLink doc="privacy" onOpen={openLegal}>Privacy</LegalLink>
       </div>
     </div>
   );
@@ -374,6 +423,7 @@ function YoureIn({ onEnter }) {
 export default function Auth({ onAuthed, polCount, tradeCount }) {
   const [screen, setScreen] = useState('welcome');
   const [pendingUser, setPendingUser] = useState(null);
+  const [legalDoc, setLegalDoc] = useState(null);
 
   const done = (user) => {
     setPendingUser(user);
@@ -383,9 +433,10 @@ export default function Auth({ onAuthed, polCount, tradeCount }) {
   return (
     <div className="view" key={screen}>
       {screen === 'welcome' && <Welcome go={setScreen} polCount={polCount} tradeCount={tradeCount} />}
-      {screen === 'signup' && <SignUp go={setScreen} onDone={done} polCount={polCount} tradeCount={tradeCount} />}
-      {screen === 'signin' && <SignIn go={setScreen} onDone={done} />}
+      {screen === 'signup' && <SignUp go={setScreen} onDone={done} openLegal={setLegalDoc} polCount={polCount} tradeCount={tradeCount} />}
+      {screen === 'signin' && <SignIn go={setScreen} onDone={done} openLegal={setLegalDoc} />}
       {screen === 'app' && <YoureIn onEnter={() => onAuthed(pendingUser)} />}
+      <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
     </div>
   );
 }

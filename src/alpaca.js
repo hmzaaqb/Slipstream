@@ -1,14 +1,24 @@
 // Alpaca paper-trading client.
 //
 // Alpaca's brokerage API doesn't allow direct browser calls (no permissive
-// CORS), so every request goes through the Vite dev/preview proxy mounted at
-// `/alpaca` (see vite.config.js) which forwards to paper-api.alpaca.markets.
+// CORS), so every request goes through a proxy:
+//   • In production (Supabase + VITE_USE_BACKEND_PROXY): the `alpaca` Edge
+//     Function, which forwards to paper-api.alpaca.markets — works on any host.
+//   • In local dev: the Vite dev/preview proxy mounted at `/alpaca`.
 //
-// Credentials live in localStorage only — they never leave the user's machine
-// except to Alpaca itself via the proxy. This is PAPER trading: no real money.
+// Credentials live in localStorage only — they are sent to Alpaca via the proxy
+// and are never persisted server-side. This is PAPER trading: no real money.
+
+import { functionsBase, hasSupabase } from './supabase';
+import { USE_BACKEND_PROXY } from './config';
 
 const STORE_KEY = 'slipstream.alpaca';
-const BASE = '/alpaca'; // proxied -> https://paper-api.alpaca.markets
+
+// Resolve the request base: the Edge Function in production, else the dev proxy.
+function apiBase() {
+  if (USE_BACKEND_PROXY && hasSupabase && functionsBase) return `${functionsBase}/alpaca`;
+  return '/alpaca'; // Vite proxy -> https://paper-api.alpaca.markets
+}
 
 export function getCreds() {
   try {
@@ -53,18 +63,19 @@ async function call(path, { method = 'GET', body, creds } = {}) {
   if (!c) throw new Error('Not connected');
   let res;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    res = await fetch(`${apiBase()}${path}`, {
       method,
       headers: authHeaders(c),
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (e) {
     throw new Error(
-      'Could not reach Alpaca. The proxy only runs under `npm run dev` / `npm run preview`.',
+      'Could not reach Alpaca. In local dev the proxy runs under `npm run dev` / `npm run preview`; in production it routes through the Supabase Edge Function.',
+      { cause: e },
     );
   }
   const text = await res.text();
-  let data = null;
+  let data;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
