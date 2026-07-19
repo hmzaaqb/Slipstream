@@ -6,8 +6,71 @@ import { ScreenTitle, EnvBadge } from './Shell';
 import { fmtPct, fmtMoneyShort, timeAgo, fmtDateLong } from '../api';
 import { DISCLAIMER_SHORT, LegalFooter } from './Legal';
 
-// Dollar amount each "mirror" order places. Keep in sync with App.onMirror.
-const MIRROR_AMOUNT = 100;
+// Preset chips for the per-mirror order size. Custom values are typed in.
+const AMOUNT_PRESETS = [50, 100, 250, 500];
+
+// Per-trade order size picker. The chosen amount is persisted (App owns it)
+// and applies to every mirror order until changed.
+function AmountPicker({ amount, setAmount }) {
+  const [draft, setDraft] = useState(null); // null = not editing custom
+  const commit = () => {
+    if (draft != null && draft !== '') setAmount(draft);
+    setDraft(null);
+  };
+  return (
+    <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 18, ...glass('mid', { borderRadius: 18 }) }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={label()}>PER-TRADE AMOUNT</span>
+        <span style={{ fontFamily: FONT.archivo, fontWeight: 800, fontSize: 14, color: COLOR.goldSoft }}>${amount}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 11 }}>
+        {AMOUNT_PRESETS.map((v) => (
+          <button
+            key={v}
+            onClick={() => { setDraft(null); setAmount(v); }}
+            style={{
+              flex: 1,
+              padding: '9px 0',
+              borderRadius: 11,
+              cursor: 'pointer',
+              fontFamily: FONT.archivo,
+              fontWeight: 800,
+              fontSize: 12.5,
+              border: `1px solid ${amount === v && draft == null ? COLOR.goldEdgeStrong : COLOR.hairlineStrong}`,
+              background: amount === v && draft == null ? 'rgba(212,175,55,0.12)' : COLOR.elevated,
+              color: amount === v && draft == null ? COLOR.goldSoft : COLOR.text,
+            }}
+          >
+            ${v}
+          </button>
+        ))}
+        <input
+          type="number"
+          min="1"
+          max="10000"
+          placeholder="Custom"
+          value={draft ?? ''}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Enter' && commit()}
+          style={{
+            flex: 1.2,
+            minWidth: 0,
+            padding: '9px 10px',
+            borderRadius: 11,
+            border: `1px solid ${draft != null ? COLOR.goldEdgeStrong : COLOR.hairlineStrong}`,
+            background: '#0A0A0A',
+            color: COLOR.text,
+            fontFamily: FONT.archivo,
+            fontWeight: 700,
+            fontSize: 12.5,
+            outline: 'none',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function ConnectCard({ onConnect, connecting, connectError }) {
   const [key, setKey] = useState('');
@@ -54,7 +117,7 @@ function ConnectCard({ onConnect, connecting, connectError }) {
   );
 }
 
-function MasterToggle({ on, onToggle, connected }) {
+function MasterToggle({ on, onToggle, connected, amount }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 16, padding: '17px 18px', borderRadius: 20, ...glass('mid', { borderRadius: 20 }) }}>
       <div style={{ flex: 1 }}>
@@ -63,7 +126,7 @@ function MasterToggle({ on, onToggle, connected }) {
           {!connected
             ? 'Connect Alpaca to place mirror orders'
             : on
-              ? `Each mirror places a $${MIRROR_AMOUNT} market order after you confirm`
+              ? `Each mirror places a $${amount} market order after you confirm`
               : 'Paused — mirror buttons are disabled'}
         </div>
       </div>
@@ -114,7 +177,7 @@ function AccountStrip({ account, positions, onRefresh, onDisconnect }) {
 
 // The design's "awaiting confirmation" card: the most recent buy disclosed by
 // a followed politician that hasn't been mirrored yet.
-function NextCandidate({ candidate, canMirror, onRequestMirror }) {
+function NextCandidate({ candidate, canMirror, onRequestMirror, amount }) {
   if (!candidate) return null;
   const { pol, trade } = candidate;
   const tag = sideTag(true);
@@ -147,7 +210,7 @@ function NextCandidate({ candidate, canMirror, onRequestMirror }) {
         </div>
         <div>
           <div style={label()}>YOUR ORDER</div>
-          <div style={{ fontFamily: FONT.archivo, fontWeight: 700, fontSize: 14, marginTop: 3 }}>${MIRROR_AMOUNT}.00</div>
+          <div style={{ fontFamily: FONT.archivo, fontWeight: 700, fontSize: 14, marginTop: 3 }}>${amount}.00</div>
         </div>
       </div>
 
@@ -166,7 +229,7 @@ function NextCandidate({ candidate, canMirror, onRequestMirror }) {
   );
 }
 
-function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfile }) {
+function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfile, amount }) {
   const recentBuys = pol.trades.filter((t) => t.type === 'buy' && t.symbol).slice(0, 4);
   const mirrored = Object.keys(orderState).filter((k) => k.startsWith(`${pol.name}:`) && orderState[k] === 'done').length;
 
@@ -177,7 +240,7 @@ function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfi
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: FONT.archivo, fontWeight: 800, fontSize: 15 }}>{pol.name}</div>
           <div style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 11.5, color: COLOR.dim, marginTop: 2 }}>
-            {pol.tradeCount} disclosures · {mirrored} mirrored · max ${MIRROR_AMOUNT}/trade
+            {pol.tradeCount} disclosures · {mirrored} mirrored · max ${amount}/trade
           </div>
         </div>
         <div style={{ flex: 'none', padding: '5px 10px', borderRadius: 8, fontFamily: FONT.archivo, fontWeight: 800, fontSize: 10, letterSpacing: '0.5px', background: canMirror ? 'rgba(212,175,55,0.10)' : 'rgba(255,255,255,0.05)', border: `1px solid ${canMirror ? COLOR.goldEdgeStrong : COLOR.hairlineStrong}`, color: canMirror ? COLOR.goldSoft : COLOR.dim }}>
@@ -215,7 +278,7 @@ function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfi
               >
                 {t.symbol}
                 <span style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 10, color: done ? COLOR.green : COLOR.dim }}>
-                  {st === 'pending' ? '…' : done ? '✓ filled' : st === 'error' ? '✕ error' : `$${MIRROR_AMOUNT}`}
+                  {st === 'pending' ? '…' : done ? '✓ filled' : st === 'error' ? '✕ error' : `$${amount}`}
                 </span>
               </button>
             );
@@ -229,7 +292,7 @@ function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfi
 // Confirmation gate shown before any order is placed. Even though this is paper
 // trading today, the same flow protects users if live trading is ever enabled —
 // no order goes out without an explicit, informed confirmation.
-function MirrorConfirm({ pending, onCancel, onConfirm }) {
+function MirrorConfirm({ pending, onCancel, onConfirm, amount, buyingPower }) {
   const [ack, setAck] = useState(false);
   if (!pending) return null;
   const { pol, trade } = pending;
@@ -242,10 +305,10 @@ function MirrorConfirm({ pending, onCancel, onConfirm }) {
 
         <div style={label({ letterSpacing: '2px', fontSize: 10 })}>CONFIRM MIRROR ORDER</div>
         <div style={{ fontFamily: FONT.archivo, fontWeight: 800, fontSize: 22, letterSpacing: '-0.5px', marginTop: 8 }}>
-          Buy ${MIRROR_AMOUNT} of {trade.symbol}
+          Buy ${amount} of {trade.symbol}
         </div>
         <div style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 13.5, lineHeight: 1.6, color: COLOR.muted, marginTop: 8 }}>
-          Mirroring {pol.name}'s {trade.symbol} buy. This places a <strong>${MIRROR_AMOUNT} market order</strong> in your connected Alpaca <strong style={{ color: COLOR.green }}>paper</strong> account.
+          Mirroring {pol.name}'s {trade.symbol} buy. This places a <strong>${amount} market order</strong> in your connected Alpaca <strong style={{ color: COLOR.green }}>paper</strong> account.
         </div>
 
         <div style={{ marginTop: 16, padding: '13px 15px', borderRadius: 14, background: 'rgba(240,100,110,0.06)', border: '1px solid rgba(240,100,110,0.28)' }}>
@@ -255,6 +318,14 @@ function MirrorConfirm({ pending, onCancel, onConfirm }) {
           </div>
         </div>
 
+        {/* Insufficient buying power is caught here, before the order is sent,
+            instead of surfacing later as an opaque ✕ error chip. */}
+        {buyingPower != null && amount > buyingPower && (
+          <div style={{ marginTop: 12, fontFamily: FONT.archivo, fontWeight: 700, fontSize: 12, color: COLOR.red }}>
+            ${amount} exceeds your buying power ({fmtUSD(buyingPower, { decimals: 0 })}). Lower the per-trade amount.
+          </div>
+        )}
+
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 16, cursor: 'pointer', fontFamily: FONT.archivo, fontWeight: 600, fontSize: 12.5, color: COLOR.muted }}>
           <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} style={{ flex: 'none', width: 18, height: 18, marginTop: 1, accentColor: COLOR.gold, cursor: 'pointer' }} />
           <span>I understand the risks and want to place this order.</span>
@@ -263,9 +334,9 @@ function MirrorConfirm({ pending, onCancel, onConfirm }) {
         <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: 15, borderRadius: 16, cursor: 'pointer', border: `1px solid ${COLOR.hairlineStrong}`, background: COLOR.elevated, color: COLOR.text, fontFamily: FONT.archivo, fontWeight: 800, fontSize: 13 }}>Cancel</button>
           <button
-            disabled={!ack}
+            disabled={!ack || (buyingPower != null && amount > buyingPower)}
             onClick={() => onConfirm(pol, trade)}
-            style={goldButton({ flex: 1, padding: 15, cursor: ack ? 'pointer' : 'not-allowed', opacity: ack ? 1 : 0.5, fontSize: 13 })}
+            style={goldButton({ flex: 1, padding: 15, cursor: ack ? 'pointer' : 'not-allowed', opacity: ack && !(buyingPower != null && amount > buyingPower) ? 1 : 0.5, fontSize: 13 })}
           >
             Place order
           </button>
@@ -290,6 +361,8 @@ export default function Copy({
   onOpenProfile,
   mirroringOn,
   setMirroringOn,
+  mirrorAmount,
+  setMirrorAmount,
   onGoPoliticians,
 }) {
   const [pending, setPending] = useState(null);
@@ -328,7 +401,8 @@ export default function Copy({
         <ConnectCard onConnect={onConnect} connecting={connecting} connectError={connectError} />
       ) : (
         <>
-          <MasterToggle on={mirroringOn} onToggle={() => setMirroringOn((v) => !v)} connected={connected} />
+          <MasterToggle on={mirroringOn} onToggle={() => setMirroringOn((v) => !v)} connected={connected} amount={mirrorAmount} />
+          <AmountPicker amount={mirrorAmount} setAmount={setMirrorAmount} />
           {account && <AccountStrip account={account} positions={positions} onRefresh={onRefresh} onDisconnect={onDisconnect} />}
         </>
       )}
@@ -337,7 +411,7 @@ export default function Copy({
         <>
           <SectionHeading>Awaiting confirmation</SectionHeading>
           {candidate ? (
-            <NextCandidate candidate={candidate} canMirror={canMirror} onRequestMirror={requestMirror} />
+            <NextCandidate candidate={candidate} canMirror={canMirror} onRequestMirror={requestMirror} amount={mirrorAmount} />
           ) : (
             <Note>Every recent buy from the politicians you follow has already been mirrored.</Note>
           )}
@@ -363,6 +437,7 @@ export default function Copy({
               canMirror={canMirror}
               onRequestMirror={requestMirror}
               onOpenProfile={onOpenProfile}
+              amount={mirrorAmount}
             />
           ))}
         </div>
@@ -374,7 +449,7 @@ export default function Copy({
         <LegalFooter align="left" style={{ marginTop: 10 }} />
       </div>
 
-      <MirrorConfirm pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMirror} />
+      <MirrorConfirm pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMirror} amount={mirrorAmount} buyingPower={account ? Number(account.buying_power) : null} />
     </div>
   );
 }

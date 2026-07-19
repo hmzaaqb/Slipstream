@@ -2,6 +2,7 @@ import { FONT, COLOR, glass, avatarStyle } from '../ui/styles';
 import { ScreenTitle, EnvBadge } from './Shell';
 import { CheckIcon, ChevronRight } from '../ui/icons';
 import { DISCLAIMER_SHORT, LegalFooter } from './Legal';
+import { getCoverageGap } from '../api';
 
 function Row({ children, hint, onClick, last }) {
   return (
@@ -82,6 +83,25 @@ export default function Account({
         <Row hint={`${tradeCount} disclosures`}>Data source</Row>
         <Row hint={source === 'sample' ? 'demo dataset' : source === 'snapshot' ? 'scraped filings' : 'live filings'} last>Feed mode</Row>
       </div>
+
+      {/* Honest coverage note: paper filings we can't parse yet. Better to say
+          so than to let missing filers look like non-traders. */}
+      {(() => {
+        const gap = getCoverageGap();
+        if (!gap?.filings) return null;
+        return (
+          <div style={{ marginTop: 12, padding: '13px 16px', borderRadius: 16, background: 'rgba(212,175,55,0.06)', border: `1px solid ${COLOR.goldEdge}` }}>
+            <div style={{ fontFamily: FONT.archivo, fontWeight: 700, fontSize: 11.5, color: COLOR.goldSoft }}>
+              Known coverage gap
+            </div>
+            <div style={{ fontFamily: FONT.archivo, fontWeight: 500, fontSize: 11, lineHeight: 1.55, color: COLOR.muted, marginTop: 5 }}>
+              {gap.filings} paper filings (scanned images) aren't parsed yet, so{' '}
+              {gap.filers.slice(0, 3).join(', ')}{gap.filers.length > 3 ? ` and ${gap.filers.length - 3} others` : ''} are
+              missing or under-counted in the feed.
+            </div>
+          </div>
+        );
+      })()}
 
       <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 16, background: '#0A0A0A', border: `1px solid ${COLOR.hairline}` }}>
         <div style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 9.5, letterSpacing: '1.5px', color: COLOR.dim }}>DISCLAIMER</div>

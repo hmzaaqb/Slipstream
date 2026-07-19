@@ -25,6 +25,20 @@ import { FONT, COLOR } from './ui/styles';
 
 const FOLLOW_KEY = 'slipstream.followed';
 const MIRROR_KEY = 'slipstream.mirroring';
+const AMOUNT_KEY = 'slipstream.mirrorAmount';
+
+// Mirror order sizing: user-configurable, clamped to sane paper-trading bounds.
+const AMOUNT_MIN = 1;
+const AMOUNT_MAX = 10000;
+const clampAmount = (n) => Math.min(AMOUNT_MAX, Math.max(AMOUNT_MIN, Math.round(Number(n) || 0)));
+const loadMirrorAmount = () => {
+  try {
+    const v = Number(localStorage.getItem(AMOUNT_KEY));
+    return v >= AMOUNT_MIN && v <= AMOUNT_MAX ? Math.round(v) : 100;
+  } catch {
+    return 100;
+  }
+};
 
 const loadFollowed = () => {
   try {
@@ -104,6 +118,17 @@ export default function App() {
   const [connectError, setConnectError] = useState(null);
   const [orderState, setOrderState] = useState({});
   const [mirroringOn, setMirroringOnRaw] = useState(loadMirroring);
+  const [mirrorAmount, setMirrorAmountRaw] = useState(loadMirrorAmount);
+
+  const setMirrorAmount = useCallback((next) => {
+    const value = clampAmount(next);
+    setMirrorAmountRaw(value);
+    try {
+      localStorage.setItem(AMOUNT_KEY, String(value));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const setMirroringOn = useCallback((next) => {
     setMirroringOnRaw((prev) => {
@@ -353,14 +378,14 @@ export default function App() {
       const key = `${pol.name}:${trade.symbol}`;
       setOrderState((s) => ({ ...s, [key]: 'pending' }));
       alpaca
-        .placeOrder({ symbol: trade.symbol, side: 'buy', notional: 100 })
+        .placeOrder({ symbol: trade.symbol, side: 'buy', notional: mirrorAmount })
         .then(() => {
           setOrderState((s) => ({ ...s, [key]: 'done' }));
           onRefreshAccount();
         })
         .catch(() => setOrderState((s) => ({ ...s, [key]: 'error' })));
     },
-    [onRefreshAccount],
+    [onRefreshAccount, mirrorAmount],
   );
 
   const onSignOut = useCallback(async () => {
@@ -492,6 +517,8 @@ export default function App() {
                 onOpenProfile={openProfile}
                 mirroringOn={mirroringOn}
                 setMirroringOn={setMirroringOn}
+                mirrorAmount={mirrorAmount}
+                setMirrorAmount={setMirrorAmount}
                 onGoPoliticians={() => navigate('leaders')}
               />
             )}

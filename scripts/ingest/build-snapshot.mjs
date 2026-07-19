@@ -432,6 +432,18 @@ const snapshot = {
     coverage: senate.trades.length ? 'House + Senate' : 'House',
     houseFilings: tally,
     senate: { filings: senate.filings, skippedPaper: senate.skippedPaper, error: senate.error },
+    // Paper filings scanned to image — real disclosures we can't parse yet
+    // (checkbox-column layout needs a vision-model pass, not plain OCR).
+    // Surfaced in the app so the gap is visible instead of silent. Some of the
+    // heaviest traders (Khanna, McCaul) file exclusively on paper.
+    paperPending: {
+      filings: Object.values(houseCache).filter((e) => e.status === 'no_text_layer').length,
+      filers: [...new Set(
+        Object.values(houseCache)
+          .filter((e) => e.status === 'no_text_layer')
+          .map((e) => displayName(e.meta.first, e.meta.last)),
+      )],
+    },
     note: 'Real congressional PTR filings scraped from official sources. Amounts are disclosure brackets (low/high bounds). Every trade links to its source filing.',
   },
   trades,
