@@ -1,0 +1,62 @@
+# Daily data ingest — keeps the app's real congressional data fresh with zero
+# servers. Scrapes House + Senate filings, rebuilds public/data/snapshot.json
+# (real trades + real prices), and commits it if anything changed. The parse
+# caches in scripts/ingest/cache/ are committed too, so each run only fetches
+# documents it hasn't seen before.
+#
+# Optional: if SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY repo secrets are set,
+# the run also upserts into the Supabase `filings`/`trades` tables.
+
+name: Daily data ingest
+
+on:
+  schedule:
+    - cron: '20 10 * * *' # 10:20 UTC daily — after the Clerk posts its ZIP
+    - cron: '20 22 * * *' # and an evening pass for late Senate filings
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build data snapshot (House + Senate + prices)
+        run: node scripts/ingest/build-snapshot.mjs
+
+      - name: Upsert into Supabase (only when secrets are configured)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            node scripts/ingest/run-house.mjs
+          else
+            echo "Supabase secrets not set — snapshot-only run."
+          fi
+
+      - name: Commit refreshed snapshot
+        run: |
+          git config user.name "slipstream-ingest[bot]"
+          git config user.email "ingest@users.noreply.github.com"
+          git add public/data/snapshot.json scripts/ingest/cache
+          if git diff --cached --quiet; then
+            echo "No new filings."
+          else
+            git commit -m "data: refresh congressional trade snapshot"
+            git push
+          fi

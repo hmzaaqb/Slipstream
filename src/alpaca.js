@@ -124,3 +124,19 @@ export function placeOrder({ symbol, side = 'buy', notional, qty }) {
 export function getOrders() {
   return call('/v2/orders?status=all&limit=50');
 }
+
+// Equity curve behind the portfolio hero chart. `range` uses the design's
+// period labels; Alpaca wants its own period/timeframe pair.
+const HISTORY_RANGE = {
+  '1D': { period: '1D', timeframe: '5Min' },
+  '1W': { period: '1W', timeframe: '1H' },
+  '1M': { period: '1M', timeframe: '1D' },
+  '3M': { period: '3M', timeframe: '1D' },
+  '1Y': { period: '1A', timeframe: '1D' },
+  ALL: { period: '5A', timeframe: '1D' },
+};
+
+export function getPortfolioHistory(range = '1M') {
+  const { period, timeframe } = HISTORY_RANGE[range] || HISTORY_RANGE['1M'];
+  return call(`/v2/account/portfolio/history?period=${period}&timeframe=${timeframe}&extended_hours=false`);
+}

@@ -99,8 +99,10 @@ const PRIVACY = [
     `you, and comply with legal obligations. We do not sell your personal information.`],
   ['Third parties',
     `We rely on service providers (e.g. authentication and hosting via Supabase, market ` +
-    `data via Financial Modeling Prep, brokerage via Alpaca). Their handling of data is ` +
-    `governed by their own privacy policies.`],
+    `price data via public market-data services, brokerage via Alpaca). Congressional ` +
+    `disclosure data is collected from official public sources (the House Clerk and ` +
+    `Senate eFD systems). Third parties' handling of data is governed by their own ` +
+    `privacy policies.`],
   ['Your rights',
     `You may request access to, correction of, or deletion of your personal data, and you ` +
     `can delete your account at any time. Contact ${CONTACT_EMAIL}.`],
@@ -140,16 +142,16 @@ export function LegalModal({ doc, onClose }) {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <h2 style={{ margin: 0, fontFamily: FONT.black, fontSize: 24, letterSpacing: '-0.6px' }}>{title}</h2>
-            <div style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '1.5px', color: 'rgba(243,241,248,0.4)', marginTop: 6 }}>{sub.toUpperCase()}</div>
+            <div style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '1.5px', color: 'rgba(247,247,245,0.4)', marginTop: 6 }}>{sub.toUpperCase()}</div>
           </div>
-          <button onClick={onClose} aria-label="Close" style={{ flex: 'none', width: 34, height: 34, borderRadius: 12, cursor: 'pointer', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#F3F1F8', fontSize: 18, lineHeight: 1 }}>×</button>
+          <button onClick={onClose} aria-label="Close" style={{ flex: 'none', width: 34, height: 34, borderRadius: 12, cursor: 'pointer', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#F7F7F5', fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
 
         <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
           {body.map(([h, p]) => (
             <div key={h}>
-              <div style={{ fontFamily: FONT.black, fontSize: 14, color: COLOR.pink, letterSpacing: '-0.2px' }}>{h}</div>
-              <p style={{ margin: '6px 0 0', fontFamily: FONT.archivo, fontWeight: 500, fontSize: 13.5, lineHeight: 1.6, color: 'rgba(243,241,248,0.72)' }}>{p}</p>
+              <div style={{ fontFamily: FONT.black, fontSize: 14, color: COLOR.goldSoft, letterSpacing: '-0.2px' }}>{h}</div>
+              <p style={{ margin: '6px 0 0', fontFamily: FONT.archivo, fontWeight: 500, fontSize: 13.5, lineHeight: 1.6, color: 'rgba(247,247,245,0.72)' }}>{p}</p>
             </div>
           ))}
         </div>
@@ -172,7 +174,7 @@ export function LegalFooter({ align = 'center', style }) {
   const [doc, setDoc] = useState(null);
   return (
     <>
-      <div style={{ textAlign: align, fontFamily: FONT.mono, fontSize: 10, letterSpacing: '0.5px', color: 'rgba(243,241,248,0.35)', ...style }}>
+      <div style={{ textAlign: align, fontFamily: FONT.mono, fontSize: 10, letterSpacing: '0.5px', color: 'rgba(247,247,245,0.35)', ...style }}>
         <LegalLink doc="disclaimer" onOpen={setDoc}>Disclaimer</LegalLink>
         {'  ·  '}
         <LegalLink doc="terms" onOpen={setDoc}>Terms</LegalLink>

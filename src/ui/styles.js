@@ -1,7 +1,10 @@
-// Shared style primitives ported from the Slipstream design. React inline
-// styles (objects), so values that the design wrote as CSS strings are
-// expressed here as camelCase props. Keeping these centralized keeps the
-// glassmorphism consistent across every surface.
+// Shared style primitives ported from the Slipstream design comp
+// (see design/README.md). React inline styles (objects), so values the comp
+// wrote as CSS strings are expressed here as camelCase props.
+//
+// The comp's language is matte black with a single gold accent: flat surfaces,
+// hairline borders, no blur. Cards that matter (portfolio, active strategies,
+// pending orders) get a gold-tinted edge instead of a brighter fill.
 
 export const FONT = {
   archivo: "'Archivo', sans-serif",
@@ -10,42 +13,55 @@ export const FONT = {
 };
 
 export const COLOR = {
-  bg: '#06060b',
-  text: '#F3F1F8',
-  pink: '#FF6FC4',
-  pinkHot: '#FF1E8E',
-  green: '#2EE5A6',
-  red: '#FF6B5B',
+  bg: '#050505',
+  surface: '#101010',
+  surfaceAlt: '#111111',
+  elevated: '#171717',
+
+  text: '#F7F7F5',
+  muted: '#B5B5B1',
+  dim: '#747474',
+
+  gold: '#D4AF37',
+  goldLight: '#F2D675',
+  goldSoft: '#E8CA72',
+
+  green: '#42C989',
+  red: '#F0646E',
   blue: '#6FA8FF',
-  purple: '#7852FF',
-  dem: '#5B9CFF',
-  rep: '#FF8C7E',
-  muted: 'rgba(243,241,248,0.5)',
-  dim: 'rgba(243,241,248,0.4)',
+
+  // Party tints, kept in the comp's restrained register.
+  dem: '#7FA6E8',
+  rep: '#E0968C',
+
+  hairline: 'rgba(255,255,255,0.08)',
+  hairlineStrong: 'rgba(255,255,255,0.14)',
+  goldEdge: 'rgba(212,175,55,0.28)',
+  goldEdgeStrong: 'rgba(212,175,55,0.45)',
 };
 
-// Glass panel — tuned for the iOS "liquid glass" look: deep background blur with
-// a saturation/brightness lift, a faint frosted gradient fill, a hairline edge,
-// and layered shadows (a crisp top specular highlight + a soft bottom inner
-// shade + an outer drop) that together read as a real pane of lit glass.
-// `tone` picks the fill strength. Pair with the `.lg` class (index.css) on the
-// element to add the bright rim-light along the top edge.
+export const GOLD_GRADIENT = 'linear-gradient(135deg,#F2D675,#D4AF37)';
+
+// Flat card surface. `tone` picks the emphasis:
+//   soft   – recessed / dashed-note surfaces
+//   mid    – default row + card
+//   card   – hero card with the gradient wash
+//   strong – gold-edged card (active strategy, pending order)
 export function glass(tone = 'mid', extra = {}) {
-  const grads = {
-    soft: 'linear-gradient(160deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))',
-    mid: 'linear-gradient(160deg,rgba(255,255,255,0.11),rgba(255,255,255,0.035))',
-    card: 'linear-gradient(155deg,rgba(255,255,255,0.13),rgba(255,255,255,0.04))',
-    strong: 'linear-gradient(160deg,rgba(255,255,255,0.16),rgba(255,255,255,0.06))',
+  const tones = {
+    soft: { background: '#0A0A0A', border: `1px solid ${COLOR.hairline}` },
+    mid: { background: COLOR.surface, border: `1px solid ${COLOR.hairline}` },
+    card: {
+      background: 'linear-gradient(150deg,#171717,#0A0A0A 65%)',
+      border: `1px solid ${COLOR.goldEdge}`,
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+    },
+    strong: {
+      background: 'linear-gradient(150deg,#171717,#0A0A0A)',
+      border: `1px solid ${COLOR.goldEdgeStrong}`,
+    },
   };
-  return {
-    background: grads[tone] || grads.mid,
-    backdropFilter: 'blur(30px) saturate(185%) brightness(1.08)',
-    WebkitBackdropFilter: 'blur(30px) saturate(185%) brightness(1.08)',
-    border: '1px solid rgba(255,255,255,0.14)',
-    boxShadow:
-      'inset 0 1px 0 rgba(255,255,255,0.30),inset 0 -1px 1px rgba(0,0,0,0.22),0 12px 30px rgba(0,0,0,0.42)',
-    ...extra,
-  };
+  return { ...(tones[tone] || tones.mid), ...extra };
 }
 
 export function tabStyle(active) {
@@ -58,18 +74,15 @@ export function tabStyle(active) {
     padding: '11px 4px',
     border: 'none',
     cursor: 'pointer',
-    borderRadius: 16,
-    fontFamily: FONT.black,
+    borderRadius: 14,
+    fontFamily: FONT.archivo,
+    fontWeight: 800,
     fontSize: 11,
-    letterSpacing: '0.5px',
-    transition: 'all .25s',
+    letterSpacing: '0.4px',
+    transition: 'all .2s',
     ...(active
-      ? {
-          background: 'linear-gradient(160deg,rgba(255,47,160,0.9),rgba(255,30,142,0.75))',
-          color: '#fff',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.45),0 6px 16px rgba(255,47,160,0.4)',
-        }
-      : { background: 'transparent', color: 'rgba(243,241,248,0.55)' }),
+      ? { background: 'rgba(212,175,55,0.12)', color: COLOR.goldSoft }
+      : { background: 'transparent', color: COLOR.dim }),
   };
 }
 
@@ -80,76 +93,99 @@ export function navStyle(active) {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: 6,
-    padding: '4px 2px 2px',
+    gap: 4,
+    padding: '8px 2px 4px',
+    minHeight: 48,
     border: 'none',
     background: 'transparent',
     cursor: 'pointer',
-    transition: 'color .25s',
-    color: active ? '#FF4FB0' : 'rgba(243,241,248,0.5)',
+    transition: 'color .2s',
+    color: active ? COLOR.gold : COLOR.dim,
   };
 }
 
 export function navBarStyle(active) {
   return {
     position: 'absolute',
-    top: -9,
-    width: 26,
-    height: 4,
-    borderRadius: 3,
-    background: 'linear-gradient(90deg,#FF6FC4,#FF1E8E)',
-    boxShadow: '0 0 12px rgba(255,47,160,0.8)',
-    transition: 'opacity .25s',
+    top: -11,
+    width: 22,
+    height: 3,
+    borderRadius: 2,
+    background: GOLD_GRADIENT,
+    transition: 'opacity .2s',
     opacity: active ? 1 : 0,
   };
 }
 
+// Segmented control inside the portfolio hero (1D / 1W / 1M / …).
 export function metricStyle(active) {
   return {
-    border: 'none',
+    flex: 1,
     cursor: 'pointer',
-    padding: '9px 16px',
-    borderRadius: 12,
-    fontFamily: FONT.black,
-    fontSize: 12,
-    letterSpacing: '0.5px',
-    transition: 'all .25s',
-    ...(active
-      ? {
-          background: 'linear-gradient(160deg,#FF4FB0,#FF1E8E)',
-          color: '#fff',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.4),0 4px 12px rgba(255,47,160,0.4)',
-        }
-      : { background: 'transparent', color: 'rgba(243,241,248,0.5)' }),
+    padding: '8px 0',
+    borderRadius: 9,
+    fontFamily: FONT.archivo,
+    fontWeight: 700,
+    fontSize: 11,
+    transition: 'all .2s',
+    background: active ? 'rgba(212,175,55,0.14)' : 'transparent',
+    color: active ? COLOR.goldSoft : COLOR.dim,
+    border: `1px solid ${active ? 'rgba(212,175,55,0.4)' : 'transparent'}`,
   };
 }
 
 export function chipStyle(active) {
   return {
-    border: 'none',
+    flex: 'none',
     cursor: 'pointer',
-    padding: '11px 16px',
-    borderRadius: 14,
-    fontFamily: FONT.black,
+    padding: '10px 15px',
+    borderRadius: 12,
+    fontFamily: FONT.archivo,
+    fontWeight: 700,
     fontSize: 12,
-    letterSpacing: '0.3px',
+    whiteSpace: 'nowrap',
+    transition: 'all .2s',
     display: 'inline-flex',
     alignItems: 'center',
     gap: 8,
-    transition: 'all .2s',
-    whiteSpace: 'nowrap',
     ...(active
       ? {
-          background: 'rgba(255,47,160,0.12)',
-          border: '1px solid rgba(255,47,160,0.6)',
-          color: '#FF6FC4',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
+          background: 'rgba(212,175,55,0.10)',
+          border: `1px solid ${COLOR.goldEdgeStrong}`,
+          color: COLOR.goldSoft,
         }
       : {
-          background: 'linear-gradient(160deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))',
-          border: '1px solid rgba(255,255,255,0.1)',
-          color: 'rgba(243,241,248,0.7)',
+          background: COLOR.surface,
+          border: '1px solid rgba(255,255,255,0.10)',
+          color: COLOR.muted,
         }),
+  };
+}
+
+// Primary gold action button.
+export function goldButton(extra = {}) {
+  return {
+    cursor: 'pointer',
+    border: '1px solid rgba(255,255,255,0.18)',
+    borderRadius: 16,
+    background: GOLD_GRADIENT,
+    color: '#090909',
+    fontFamily: FONT.archivo,
+    fontWeight: 800,
+    fontSize: 15,
+    ...extra,
+  };
+}
+
+// Uppercase micro-label above a value.
+export function label(extra = {}) {
+  return {
+    fontFamily: FONT.archivo,
+    fontWeight: 600,
+    fontSize: 10.5,
+    letterSpacing: '0.8px',
+    color: COLOR.dim,
+    ...extra,
   };
 }
 
@@ -159,32 +195,38 @@ export function sideTag(isBuy) {
       display: 'inline-flex',
       alignItems: 'center',
       gap: 5,
-      padding: '5px 10px',
-      borderRadius: 9,
-      fontFamily: FONT.black,
+      padding: '4px 9px',
+      borderRadius: 8,
+      fontFamily: FONT.archivo,
+      fontWeight: 800,
       fontSize: 10,
-      letterSpacing: '1px',
+      letterSpacing: '0.5px',
       ...(isBuy
-        ? { background: 'rgba(46,229,166,0.14)', border: '1px solid rgba(46,229,166,0.5)', color: '#2EE5A6' }
-        : { background: 'rgba(255,47,160,0.12)', border: '1px solid rgba(255,47,160,0.5)', color: '#FF6FC4' }),
+        ? { background: 'rgba(66,201,137,0.10)', border: '1px solid rgba(66,201,137,0.4)', color: COLOR.green }
+        : { background: 'rgba(240,100,110,0.10)', border: '1px solid rgba(240,100,110,0.4)', color: COLOR.red }),
     },
-    arrow: { color: isBuy ? '#2EE5A6' : '#FF6FC4', transform: `rotate(${isBuy ? 0 : 180}deg)` },
+    arrow: { color: isBuy ? COLOR.green : COLOR.red, transform: `rotate(${isBuy ? 0 : 180}deg)` },
   };
 }
 
-// avatar circle with the design's inner-glow highlight
-export function avatarStyle(from, to, size = 62) {
+// Avatar disc. The comp uses one flat dark disc with gold initials rather than
+// per-person gradients, so `from`/`to` are accepted (callers still pass the
+// palette from members.js) but only used to tint the ring subtly.
+export function avatarStyle(from, to, size = 52, accent = false) {
   return {
     position: 'relative',
     width: size,
     height: size,
+    flex: 'none',
     borderRadius: '50%',
-    background: `linear-gradient(145deg,${from},${to})`,
+    background: COLOR.elevated,
+    border: `1px solid ${accent ? COLOR.goldEdgeStrong : COLOR.hairlineStrong}`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 'none',
-    boxShadow:
-      'inset 0 2px 4px rgba(255,255,255,0.45),inset 0 -3px 6px rgba(0,0,0,0.35),0 6px 16px rgba(0,0,0,0.4)',
+    color: COLOR.goldSoft,
+    fontFamily: FONT.archivo,
+    fontWeight: 800,
+    fontSize: Math.round(size * 0.3),
   };
 }

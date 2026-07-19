@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Open the printed local URL. The app loads on the **Leaders** tab.
+Open the printed local URL. The app loads on the **Home** tab with real scraped data.
 
 > **Going to production?** See [`SETUP.md`](SETUP.md) for the full launch guide:
 > Supabase auth (email + Google/Apple), server-side FMP/Alpaca key proxying via
@@ -28,14 +28,17 @@ Open the printed local URL. The app loads on the **Leaders** tab.
 
 ## How it works
 
-- **Data** (`src/api.js`): pulls real Senate + House trades from Financial
-  Modeling Prep (tries the modern `stable` API, falls back to legacy `v3/v4`),
-  normalizes them, then fetches historical prices per ticker to compute **real
-  ROI, win rate, and S&P alpha**. Results are cached in `localStorage`. If the
-  API is unreachable it falls back to a bundled sample dataset so the UI always
-  renders.
-- **Members** (`src/members.js`): FMP trade data omits party/state, so this maps
-  the active congressional traders to party / state / chamber.
+- **Data pipeline** (`scripts/ingest/`): Slipstream scrapes REAL congressional
+  filings from primary sources — the House Clerk's PTR PDFs and the Senate eFD
+  system — and bundles them (with real entry/latest prices) into
+  `public/data/snapshot.json`. Every trade links to its source filing.
+  - `npm run snapshot` — rebuild the snapshot (only fetches unseen filings)
+  - `npm run validate-house` — parser accuracy report against live filings
+  - `.github/workflows/ingest.yml` — refreshes the data twice daily in CI
+- **Data priority** (`src/api.js`): Supabase (live DB, when configured) →
+  bundled snapshot (real, as-of build time) → sample data (clearly labelled demo).
+- **Members**: party/state resolved from the public-domain
+  unitedstates/congress-legislators dataset at snapshot build time.
 - **Alpaca** (`src/alpaca.js`): paper-trading client. Credentials live only in
   `localStorage`. Connect with your **paper** API key + secret.
 

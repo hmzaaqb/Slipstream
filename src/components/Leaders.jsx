@@ -7,7 +7,7 @@ const SORT_LABELS = { recent: 'MOST RECENT', roi: 'BEST ROI', win: 'BEST WIN RAT
 const PARTY_OPTS = [
   { id: 'all', label: 'All Parties' },
   { id: 'dem', label: 'Democrat', dot: '#5B9CFF' },
-  { id: 'rep', label: 'Republican', dot: '#FF6B5B' },
+  { id: 'rep', label: 'Republican', dot: '#F0646E' },
 ];
 const CHAMBER_OPTS = [
   { id: 'both', label: 'Both Chambers' },
@@ -41,7 +41,7 @@ function ChipRow({ opts, current, group, onPick }) {
 }
 
 function label(group, text) {
-  return <div style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '2px', color: 'rgba(243,241,248,0.5)', marginTop: group === 'party' ? 0 : 20 }}>{text}</div>;
+  return <div style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '2px', color: 'rgba(247,247,245,0.5)', marginTop: group === 'party' ? 0 : 20 }}>{text}</div>;
 }
 
 function LeaderCard({ card, onClick }) {
@@ -56,9 +56,9 @@ function LeaderCard({ card, onClick }) {
       </div>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div style={{ fontFamily: FONT.black, fontSize: 23, lineHeight: 1, letterSpacing: '-0.4px' }}>{card.name}</div>
-        <div style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '1px', color: 'rgba(243,241,248,0.5)', marginTop: 7 }}>{card.chamber}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '1px', color: 'rgba(247,247,245,0.5)', marginTop: 7 }}>{card.chamber}</div>
         <div style={{ fontFamily: FONT.archivo, fontWeight: 800, fontSize: 14, color: COLOR.pink, marginTop: 9 }}>{card.disclosed}</div>
-        <div style={{ fontFamily: FONT.mono, fontSize: 10, letterSpacing: '1px', color: 'rgba(243,241,248,0.4)', marginTop: 8 }}>{card.time}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: 10, letterSpacing: '1px', color: 'rgba(247,247,245,0.4)', marginTop: 8 }}>{card.time}</div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', flex: 'none', textAlign: 'right' }}>
         <svg width="74" height="34" viewBox="0 0 74 34" fill="none" style={{ marginBottom: 6 }}>
@@ -66,8 +66,8 @@ function LeaderCard({ card, onClick }) {
           <circle cx={card.dotX} cy={card.dotY} r="3.2" fill={card.roiPositive === false ? COLOR.red : COLOR.green} />
         </svg>
         <div style={{ fontFamily: FONT.black, fontSize: 30, lineHeight: 0.95, color: card.roiPositive === false ? COLOR.red : COLOR.green, letterSpacing: '-1px' }}>{card.roi}</div>
-        <div style={{ fontFamily: FONT.mono, fontSize: 10, letterSpacing: '2px', color: 'rgba(243,241,248,0.45)', marginTop: 6 }}>{card.metricTag}</div>
-        <div style={{ fontFamily: FONT.mono, fontSize: 10, letterSpacing: '1px', color: 'rgba(243,241,248,0.55)', marginTop: 4 }}>{card.trades}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: 10, letterSpacing: '2px', color: 'rgba(247,247,245,0.45)', marginTop: 6 }}>{card.metricTag}</div>
+        <div style={{ fontFamily: FONT.mono, fontSize: 10, letterSpacing: '1px', color: 'rgba(247,247,245,0.55)', marginTop: 4 }}>{card.trades}</div>
         <div style={{ fontFamily: FONT.archivo, fontWeight: 800, fontSize: 11, letterSpacing: '1px', color: COLOR.green, marginTop: 4 }}>{card.win}</div>
       </div>
     </div>
@@ -85,13 +85,13 @@ export default function Leaders({ politicians, metric, setMetric, search, setSea
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search politician name…"
-          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontFamily: FONT.archivo, fontWeight: 600, fontSize: 15, color: '#F3F1F8' }}
+          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontFamily: FONT.archivo, fontWeight: 600, fontSize: 15, color: '#F7F7F5' }}
         />
       </div>
 
       {/* filters row */}
       <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <button onClick={toggleFilters} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 18px', cursor: 'pointer', borderRadius: 16, background: 'linear-gradient(160deg,rgba(255,255,255,0.1),rgba(255,255,255,0.03))', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.13)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22)', color: '#F3F1F8', fontFamily: FONT.black, fontSize: 13, letterSpacing: '1px' }}>
+        <button onClick={toggleFilters} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 18px', cursor: 'pointer', borderRadius: 16, background: 'linear-gradient(160deg,rgba(255,255,255,0.1),rgba(255,255,255,0.03))', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.13)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22)', color: '#F7F7F5', fontFamily: FONT.black, fontSize: 13, letterSpacing: '1px' }}>
           <FilterIcon />
           FILTERS
           <Chevron style={{ transition: 'transform .25s', transform: `rotate(${filtersOpen ? 180 : 0}deg)` }} />
@@ -115,17 +115,17 @@ export default function Leaders({ politicians, metric, setMetric, search, setSea
       )}
 
       {/* count */}
-      <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 10, fontFamily: FONT.mono, fontSize: 12, letterSpacing: '2px', color: 'rgba(243,241,248,0.45)' }}>
-        <span style={{ color: 'rgba(243,241,248,0.8)' }}>{politicians.length} POLITICIANS</span>
+      <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 10, fontFamily: FONT.mono, fontSize: 12, letterSpacing: '2px', color: 'rgba(247,247,245,0.45)' }}>
+        <span style={{ color: 'rgba(247,247,245,0.8)' }}>{politicians.length} POLITICIANS</span>
         <span>·</span>
         <span style={{ color: COLOR.pink }}>SORTED BY {SORT_LABELS[sort]}</span>
-        {pricesLoading && <span style={{ color: 'rgba(243,241,248,0.4)' }}>· computing ROI…</span>}
+        {pricesLoading && <span style={{ color: 'rgba(247,247,245,0.4)' }}>· computing ROI…</span>}
       </div>
 
       {/* cards */}
       <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
         {cards.length === 0 && (
-          <div style={{ padding: 30, textAlign: 'center', fontFamily: FONT.mono, fontSize: 12, color: 'rgba(243,241,248,0.4)' }}>No politicians match these filters.</div>
+          <div style={{ padding: 30, textAlign: 'center', fontFamily: FONT.mono, fontSize: 12, color: 'rgba(247,247,245,0.4)' }}>No politicians match these filters.</div>
         )}
         {cards.map((card, i) => (
           <LeaderCard key={card.name} card={card} onClick={() => onSelect(politicians[i])} />

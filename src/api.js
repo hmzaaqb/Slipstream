@@ -15,6 +15,7 @@ import { FMP_STABLE, FMP_V4, FMP_V3, getFmpKey, FEED_PAGES, TRADES_TTL, PRICE_TT
 import { functionsBase, supabase, hasSupabase } from './supabase';
 import { resolveMember, stateFromDistrict, avatarColors, initials } from './members';
 import { SAMPLE_TRADES, COMPANIES, buildSamplePriceMap } from './sample-data';
+import { loadSnapshot, snapshotPriceMap } from './snapshot';
 
 /* ------------------------------------------------------------------ */
 /* small utilities                                                     */
@@ -240,9 +241,70 @@ async function fetchChamber(chamber) {
   return [];
 }
 
+// Our own scraped data: the `trades` table in Supabase, filled by the House
+// ingest runner (scripts/ingest/run-house.mjs) from actual Clerk filings.
+// Rows keep the source PDF URL, so everything shown is auditable. Ticker-less
+// rows (treasury bills, notes) are included — ROI code already skips symbols
+// it has no prices for, but volume math must count them.
+async function fetchScrapedTrades() {
+  if (!hasSupabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('trades')
+      .select('*')
+      .order('disclosure_date', { ascending: false })
+      .limit(2000);
+    if (error || !data || data.length < 12) return null;
+    return data.map((r) => {
+      const member = resolveMember(r.politician, r.chamber, r.state);
+      const company =
+        (COMPANIES[r.symbol] && COMPANIES[r.symbol].name) || cleanAssetName(r.asset) || r.symbol || r.asset;
+      return {
+        id: r.id,
+        name: titleCase(r.politician),
+        party: member.party,
+        state: r.state || member.state,
+        chamber: r.chamber,
+        symbol: r.symbol || '',
+        company,
+        sector: (COMPANIES[r.symbol] && COMPANIES[r.symbol].sector) || sectorFromName(company),
+        type: r.type,
+        amountLow: Number(r.amount_low) || 0,
+        amountHigh: Number(r.amount_high) || 0,
+        amountMid: Number(r.amount_mid) || 0,
+        transactionDate: r.transaction_date || '',
+        disclosureDate: r.disclosure_date || '',
+        link: r.source_url || '',
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 let _tradesPromise = null;
 
 export async function getTrades({ force = false } = {}) {
+  // Real data first: our own scraped filings in Supabase beat everything,
+  // including demo mode — the whole point is showing actual disclosures.
+  const scraped = await fetchScrapedTrades();
+  if (scraped) {
+    return { trades: scraped, source: 'live', generatedAt: Date.now() };
+  }
+
+  // Bundled snapshot next: real filings scraped at build time (see
+  // scripts/ingest/build-snapshot.mjs). Real data — just as-of the build,
+  // so generatedAt reflects when it was scraped, not now.
+  const snap = await loadSnapshot();
+  if (snap) {
+    return {
+      trades: snap.trades.slice(),
+      source: 'snapshot',
+      generatedAt: snap.meta?.generatedAt || Date.now(),
+      coverage: snap.meta?.coverage || 'House',
+    };
+  }
+
   // Demo mode: skip the (paid-only) live fetch entirely and serve the bundled
   // sample dataset immediately. Flip DEMO_MODE in config.js at launch.
   if (DEMO_MODE) {
@@ -262,8 +324,16 @@ export async function getTrades({ force = false } = {}) {
       ...houseRaw.map((r, i) => normalizeTrade(r, 'house', i)),
     ].filter((t) => t.symbol && /^[A-Z.]{1,6}$/.test(t.symbol));
 
+    // Falling back to sample data is a DEGRADED state, not a neutral one: the
+    // user is about to be shown fabricated returns. Log it loudly and mark the
+    // result so the UI can say so — an API outage must never render as a
+    // healthy app full of plausible numbers.
     let source = 'live';
     if (trades.length < 12) {
+      console.error(
+        `[slipstream] Live congressional feed returned only ${trades.length} usable trades ` +
+        `(expected 12+). Falling back to SIMULATED sample data.`
+      );
       trades = SAMPLE_TRADES.slice();
       source = 'sample';
     }
@@ -316,6 +386,11 @@ async function fetchHistory(symbol) {
 // Build a price map for the given symbols. Concurrency-limited; failures are
 // simply absent from the returned map (callers treat that as "no ROI").
 export async function getPriceMap(symbols) {
+  // Snapshot prices first: REAL entry + latest closes fetched at build time
+  // for exactly the symbols the scraped trades contain. Makes ROI genuine.
+  const snap = await loadSnapshot();
+  if (snap?.prices && Object.keys(snap.prices).length) return snapshotPriceMap(snap);
+
   // Demo mode: synthetic, deterministic price histories so every metric renders
   // without touching the (paid-only) FMP price endpoints.
   if (DEMO_MODE) return buildSamplePriceMap();
@@ -437,30 +512,10 @@ export function chamberLabel(chamber, state) {
   return state ? `${base} · ${state}` : base;
 }
 
-// Sparkline points for a 74x34 viewBox, trending per ROI sign/magnitude.
-function sparkline(seedStr, roi) {
-  let h = 0;
-  for (let i = 0; i < seedStr.length; i++) h = (h * 31 + seedStr.charCodeAt(i)) >>> 0;
-  const rand = () => {
-    h = (h * 1103515245 + 12345) & 0x7fffffff;
-    return h / 0x7fffffff;
-  };
-  const n = 6;
-  const xs = [2, 16, 30, 44, 58, 70];
-  const trend = roi == null ? 0 : Math.max(-1, Math.min(1, roi * 2));
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const base = 26 - trend * 20 * (i / (n - 1)); // higher value = lower y
-    const jitter = (rand() - 0.5) * 10;
-    const y = Math.max(3, Math.min(31, base + jitter));
-    pts.push([xs[i], Math.round(y)]);
-  }
-  return {
-    points: pts.map((p) => p.join(',')).join(' '),
-    dotX: pts[n - 1][0],
-    dotY: pts[n - 1][1],
-  };
-}
+// NOTE: `sparkline()` used to live here. It hashed the politician's *name* to
+// draw a jittered line sloped by their ROI — it never read a price series, so
+// it was a chart of nothing shown on every card. Removed deliberately. If a
+// sparkline comes back it must be built from real per-trade price history.
 
 /* ------------------------------------------------------------------ */
 /* aggregation builders                                                */
@@ -527,7 +582,6 @@ export function toLeaderCards(politicians, metric) {
   return politicians.map((p, i) => {
     const rank = i + 1;
     const metricVal = metric === 'sp' ? p.sp : p.roi;
-    const spark = sparkline(p.name, metricVal);
     return {
       rank,
       name: p.name,
@@ -544,7 +598,6 @@ export function toLeaderCards(politicians, metric) {
       metricTag: metric === 'sp' ? 'VS S&P' : 'ROI',
       rankTint: RANK_TINTS[rank] || 'linear-gradient(150deg,rgba(255,255,255,0.18),rgba(255,255,255,0.06))',
       rankTextDark: rank <= 3,
-      ...spark,
     };
   });
 }
@@ -573,14 +626,18 @@ export function filterPoliticians(politicians, { party, chamber, search }) {
       if (chamber === 'senate' && p.chamber !== 'senate') return false;
       if (chamber === 'house' && p.chamber !== 'house') return false;
     }
+    // The search box offers "name or state", so match both — it previously
+    // only matched name, which made every state query return nothing.
     if (search && search.trim()) {
-      if (!p.name.toLowerCase().includes(search.trim().toLowerCase())) return false;
+      const q = search.trim().toLowerCase();
+      const haystack = `${p.name} ${p.state || ''}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
     }
     return true;
   });
 }
 
-export function buildPartySentiment(politicians) {
+export function buildPartyReturn(politicians) {
   const agg = (party) => {
     const ps = politicians.filter((p) => p.party === party && p.roi != null);
     if (!ps.length) return null;
@@ -705,6 +762,7 @@ export function buildFeed(trades, politicians, priceMap, { ticker, ftype, fsize,
       ret: fmtPct(ret),
       retPositive: ret == null ? null : ret >= 0,
       large: t.amountHigh >= 250000,
+      link: t.link || '',
       _pol: pol,
     };
   });
@@ -758,23 +816,24 @@ export function buildProfile(pol, priceMap, metric = 'roi') {
     ticker: t.symbol,
     date: fmtDateLong(t.transactionDate),
     amt: fmtMoneyShort(t.amountLow || t.amountMid),
+    link: t.link || '',
   }));
 
   const metricVal = metric === 'sp' ? pol.sp : pol.roi;
   const stats = [
-    { label: 'TRADES', value: String(pol.tradeCount), valColor: '#F3F1F8', sub: '' },
-    { label: 'BUYS', value: String(pol.buys), valColor: '#2EE5A6', sub: '' },
-    { label: 'SELLS', value: String(pol.sells), valColor: '#FF6FC4', sub: '' },
+    { label: 'TRADES', value: String(pol.tradeCount), valColor: '#F7F7F5', sub: '' },
+    { label: 'BUYS', value: String(pol.buys), valColor: '#42C989', sub: '' },
+    { label: 'SELLS', value: String(pol.sells), valColor: '#D4AF37', sub: '' },
     {
       label: 'WINRATE',
       value: pol.winRate == null ? '—' : `${Math.round(pol.winRate * 100)}%`,
-      valColor: '#2EE5A6',
+      valColor: '#42C989',
       sub: pol.scored ? `${pol.scored} SCORED` : '',
     },
     {
       label: metric === 'sp' ? 'VS S&P' : 'ROI',
       value: fmtPct(metricVal),
-      valColor: metricVal == null ? 'rgba(243,241,248,0.5)' : metricVal >= 0 ? '#2EE5A6' : '#FF6B5B',
+      valColor: metricVal == null ? 'rgba(247,247,245,0.5)' : metricVal >= 0 ? '#42C989' : '#F0646E',
       sub: 'TAP TO TOGGLE',
     },
   ];
@@ -791,6 +850,5 @@ export function buildProfile(pol, priceMap, metric = 'roi') {
     stats,
     holdings,
     recent,
-    chartUp: (metricVal ?? 0) >= 0,
   };
 }

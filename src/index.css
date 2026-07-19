@@ -5,13 +5,13 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: #06060b;
+  background: #050505;
 }
 
 #root {
   min-height: 100vh;
-  background: #06060b;
-  color: #F3F1F8;
+  background: #050505;
+  color: #F7F7F5;
   font-family: 'Archivo', sans-serif;
   -webkit-font-smoothing: antialiased;
 }

@@ -2,7 +2,10 @@
 // settings screen) by writing `slipstream.fmpKey` into localStorage, which is
 // handy for distributing the app without rebuilding.
 
-const DEFAULT_FMP_KEY = 'zrsocwLlzZHJvULwN6lHqFRYuGZ0XQtU';
+// No bundled key. The previously committed key was verified dead (FMP returns
+// 403 "legacy endpoint") and shipping any key in a client bundle leaks it —
+// set one at runtime via localStorage, or use the Supabase proxy.
+const DEFAULT_FMP_KEY = '';
 
 export function getFmpKey() {
   try {

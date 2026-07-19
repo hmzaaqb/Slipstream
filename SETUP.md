@@ -95,13 +95,19 @@ Now the browser never sees the FMP key, and Alpaca works on any static host.
 
 ## 5. Go live with real data
 
-In `src/config.js`:
-```js
-export const DEMO_MODE = false;   // was true
-```
-With `DEMO_MODE = false` **and** `VITE_USE_BACKEND_PROXY=true`, the app pulls
-real congressional trades + prices through the FMP proxy. (The congressional
-endpoints are **premium-only** on FMP — you need a paid plan.)
+**You already are.** The app ships with `public/data/snapshot.json` — real House
+and Senate filings scraped from official sources by `npm run snapshot`, with
+real entry/latest prices. The data priority in `src/api.js` is:
+
+1. **Supabase `trades` table** (live DB) — populated by `npm run ingest` once
+   your Supabase project is connected (see the schema in `supabase/schema.sql`)
+2. **Bundled snapshot** — real filings as of the last `npm run snapshot` run;
+   `.github/workflows/ingest.yml` refreshes it twice daily in CI
+3. **Sample data** — synthetic, clearly labelled with a demo banner; only shown
+   if both of the above are unavailable
+
+No FMP subscription is required. (The legacy FMP path still exists behind
+`DEMO_MODE = false` + a runtime key, but the scraper has replaced it.)
 
 ---
 
