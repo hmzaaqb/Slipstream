@@ -819,6 +819,28 @@ export function buildProfile(pol, priceMap, metric = 'roi') {
     link: t.link || '',
   }));
 
+  // Per-position mark-to-market returns for the profile chart. Real math only:
+  // entry = first close on/after the first disclosed buy, exit = latest close.
+  // (The bundled snapshot keeps sparse price history, so an equity curve isn't
+  // honestly computable — per-position bars are.)
+  const roiBars = [];
+  if (priceMap) {
+    const bySym = new Map();
+    for (const t of pol.trades) {
+      if (t.type !== 'buy' || !t.symbol || !priceMap.get(t.symbol)) continue;
+      const cur = bySym.get(t.symbol);
+      if (!cur || new Date(t.transactionDate) < new Date(cur.transactionDate)) bySym.set(t.symbol, t);
+    }
+    for (const [sym, t] of bySym) {
+      const px = priceMap.get(sym);
+      const entry = priceOnOrAfter(px.history, t.transactionDate);
+      if (!entry || entry <= 0) continue;
+      roiBars.push({ ticker: sym, ret: px.last / entry - 1, weight: t.amountMid });
+    }
+    roiBars.sort((a, b) => b.weight - a.weight);
+    roiBars.length = Math.min(roiBars.length, 8);
+  }
+
   const metricVal = metric === 'sp' ? pol.sp : pol.roi;
   const stats = [
     { label: 'TRADES', value: String(pol.tradeCount), valColor: '#F7F7F5', sub: '' },
@@ -850,5 +872,6 @@ export function buildProfile(pol, priceMap, metric = 'roi') {
     stats,
     holdings,
     recent,
+    roiBars,
   };
 }

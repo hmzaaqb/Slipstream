@@ -54,6 +54,58 @@ function RecentRow({ t }) {
   );
 }
 
+// Per-position mark-to-market return bars. Every bar is real math: first
+// disclosed buy's entry close vs the latest close. Replaces the old hardcoded
+// (fake) portfolio curve.
+function RoiBars({ bars }) {
+  if (!bars || !bars.length) return null;
+  const W = 320;
+  const H = 120;
+  const PAD = 6;
+  const maxAbs = Math.max(0.02, ...bars.map((b) => Math.abs(b.ret)));
+  const bw = (W - PAD * 2) / bars.length;
+  const zero = H / 2;
+  const scale = (H / 2 - 16) / maxAbs;
+
+  return (
+    <div style={{ marginTop: 14, padding: 18, borderRadius: 24, ...glass('soft', { borderRadius: 24 }) }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '1.5px', color: 'rgba(247,247,245,0.55)' }}>
+          RETURN BY POSITION
+        </span>
+        <span style={{ fontFamily: FONT.mono, fontSize: 9, letterSpacing: '0.5px', color: 'rgba(247,247,245,0.35)' }}>
+          SINCE FIRST DISCLOSED BUY
+        </span>
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H + 26}`} style={{ marginTop: 12, display: 'block' }}>
+        <line x1={PAD} y1={zero} x2={W - PAD} y2={zero} stroke="rgba(247,247,245,0.25)" strokeWidth="1" strokeDasharray="4 4" />
+        {bars.map((b, i) => {
+          const up = b.ret >= 0;
+          const h = Math.max(2, Math.abs(b.ret) * scale);
+          const x = PAD + i * bw + bw * 0.18;
+          const y = up ? zero - h : zero;
+          const c = up ? COLOR.green : COLOR.red;
+          const pct = `${b.ret >= 0 ? '+' : ''}${(b.ret * 100).toFixed(0)}%`;
+          return (
+            <g key={b.ticker}>
+              <rect x={x} y={y} width={bw * 0.64} height={h} rx={3} fill={c} opacity="0.85" />
+              <text x={x + bw * 0.32} y={up ? y - 5 : y + h + 11} textAnchor="middle" fontSize="9" fontWeight="700" fill={c} fontFamily="Archivo, sans-serif">
+                {pct}
+              </text>
+              <text x={x + bw * 0.32} y={H + 18} textAnchor="middle" fontSize="8.5" fontWeight="600" fill="rgba(247,247,245,0.45)" fontFamily="Archivo, sans-serif">
+                {b.ticker}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ marginTop: 8, fontFamily: FONT.mono, fontSize: 9, letterSpacing: '0.5px', color: 'rgba(247,247,245,0.35)' }}>
+        Entry = close on first disclosed buy date · marked to latest close
+      </div>
+    </div>
+  );
+}
+
 export default function Profile({ profile, onBack, onToggleMetric, isFollowed, onToggleFollow, onShare }) {
   if (!profile) {
     return (
@@ -115,10 +167,7 @@ export default function Profile({ profile, onBack, onToggleMetric, isFollowed, o
         </div>
       </div>
 
-      {/* A "PORTFOLIO ACTIVITY · ALL TIME" chart used to render here. Its path
-          was a hardcoded SVG string — byte-identical for every politician, with
-          a fake S&P dashed line — so it was removed. A real equity curve needs
-          a per-trade price series; see Phase 1 of the plan. */}
+      <RoiBars bars={profile.roiBars} />
 
       <div style={{ marginTop: 14, padding: '6px 0', borderRadius: 24, ...glass('soft', { borderRadius: 24 }) }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px 12px' }}>
