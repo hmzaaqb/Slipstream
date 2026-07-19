@@ -229,12 +229,14 @@ async function buildPrices(trades) {
   datesBySym.set('SPY', allDates); // benchmark needs every trade date
 
   const prices = {};
+  const seriesBySym = new Map(); // full daily series, kept in memory for P/L curves
   let done = 0, missing = 0;
   for (const [sym, dates] of datesBySym) {
     const series = await yahooDaily(sym);
     if (!series) {
       missing++;
     } else {
+      seriesBySym.set(sym, series);
       const points = new Map();
       for (const d of dates) {
         const p = onOrAfter(series, d);
@@ -252,7 +254,65 @@ async function buildPrices(trades) {
     await sleep(250);
   }
   console.log(`prices: ${Object.keys(prices).length} symbols priced, ${missing} unavailable`);
-  return prices;
+  return { prices, seriesBySym };
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. per-politician P/L curves (real mark-to-market, weekly samples)  */
+/* ------------------------------------------------------------------ */
+
+// Close at-or-before a date (positions are valued at the last known close).
+function closeAtOrBefore(series, date) {
+  let lo = 0, hi = series.length - 1, ans = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (series[mid].date <= date) { ans = series[mid].close; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  return ans;
+}
+
+/**
+ * For each politician: estimated dollars made, over time, from their disclosed
+ * buys — Σ amountMid × (close(t)/entry − 1) across positions open by t.
+ * Weekly samples + today. Real math from real closes; sells are not modelled
+ * (consistent with the app's ROI figure, and stated in the UI caption).
+ */
+function buildPnlCurves(trades, seriesBySym) {
+  const byPol = new Map();
+  for (const t of trades) {
+    if (t.type !== 'buy' || !t.symbol || !t.transactionDate) continue;
+    const series = seriesBySym.get(t.symbol);
+    if (!series) continue;
+    const entryPt = series.find((p) => p.date >= t.transactionDate);
+    if (!entryPt || entryPt.close <= 0) continue;
+    if (!byPol.has(t.name)) byPol.set(t.name, []);
+    byPol.get(t.name).push({ symbol: t.symbol, date: entryPt.date, entry: entryPt.close, weight: t.amountMid });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const pnl = {};
+  for (const [name, positions] of byPol) {
+    const start = positions.reduce((a, p) => (p.date < a ? p.date : a), today);
+    // weekly sample dates from first entry to today
+    const dates = [];
+    for (let d = new Date(start); d < new Date(today); d.setDate(d.getDate() + 7)) {
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    dates.push(today);
+    const series = dates.map((d) => {
+      let v = 0;
+      for (const p of positions) {
+        if (p.date > d) continue;
+        const close = closeAtOrBefore(seriesBySym.get(p.symbol), d);
+        if (close != null) v += p.weight * (close / p.entry - 1);
+      }
+      return Math.round(v);
+    });
+    if (series.length >= 2) pnl[name] = series;
+  }
+  console.log(`P/L curves: ${Object.keys(pnl).length} politicians`);
+  return pnl;
 }
 
 /* ------------------------------------------------------------------ */
@@ -330,7 +390,8 @@ trades.sort((a, b) => (a.disclosureDate < b.disclosureDate ? 1 : -1));
 console.log(`\ntrades: ${trades.length} total (${trades.filter((t) => t.chamber === 'senate').length} senate)`);
 console.log('house filings:', tally);
 
-const prices = await buildPrices(trades);
+const { prices, seriesBySym } = await buildPrices(trades);
+const pnl = buildPnlCurves(trades, seriesBySym);
 
 const snapshot = {
   meta: {
@@ -343,6 +404,7 @@ const snapshot = {
   },
   trades,
   prices,
+  pnl,
 };
 
 fs.writeFileSync(OUT, JSON.stringify(snapshot));

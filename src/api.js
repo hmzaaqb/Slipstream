@@ -282,6 +282,10 @@ async function fetchScrapedTrades() {
   }
 }
 
+// Per-politician dollar P/L series (weekly samples), precomputed at snapshot
+// build time from full daily closes. Keyed by display name.
+let _pnlByName = null;
+
 let _tradesPromise = null;
 
 export async function getTrades({ force = false } = {}) {
@@ -297,6 +301,7 @@ export async function getTrades({ force = false } = {}) {
   // so generatedAt reflects when it was scraped, not now.
   const snap = await loadSnapshot();
   if (snap) {
+    _pnlByName = snap.pnl || null;
     return {
       trades: snap.trades.slice(),
       source: 'snapshot',
@@ -873,5 +878,7 @@ export function buildProfile(pol, priceMap, metric = 'roi') {
     holdings,
     recent,
     roiBars,
+    // Real weekly mark-to-market P/L curve (dollars), when the snapshot has it.
+    pnlSeries: _pnlByName?.[pol.name] || null,
   };
 }

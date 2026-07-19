@@ -1,5 +1,6 @@
 import { FONT, COLOR, glass, sideTag, avatarStyle } from '../ui/styles';
 import { BackIcon, StarIcon, ShareIcon, Triangle } from '../ui/icons';
+import { fmtMoneyShort } from '../api';
 
 const PARTY_GRAD = {
   D: 'linear-gradient(145deg,#5B9CFF,#2C5FE0)',
@@ -50,6 +51,90 @@ function RecentRow({ t }) {
         </div>
       </div>
       <span style={{ fontFamily: FONT.black, fontSize: 14, color: COLOR.goldSoft }}>{t.amt}</span>
+    </div>
+  );
+}
+
+// Catmull-Rom → cubic bezier, for a smooth curve through real data points.
+function smoothPath(pts) {
+  if (pts.length < 2) return '';
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
+// Estimated-profit-over-time curve. Every point is real: weekly mark-to-market
+// of the politician's disclosed buys, computed from actual daily closes at
+// snapshot build time. Y axis = dollars made; no X labels by design.
+function PnlChart({ series }) {
+  if (!series || series.length < 2) return null;
+  const W = 330;
+  const H = 150;
+  const L = 46; // left gutter for $ labels
+  const PAD = 8;
+
+  const lo = Math.min(0, ...series);
+  const hi = Math.max(0, ...series);
+  const span = hi - lo || 1;
+  const x = (i) => L + (i / (series.length - 1)) * (W - L - PAD);
+  const y = (v) => PAD + (1 - (v - lo) / span) * (H - PAD * 2);
+  const pts = series.map((v, i) => [+x(i).toFixed(1), +y(v).toFixed(1)]);
+  const line = smoothPath(pts);
+  const area = `${line} L${pts.at(-1)[0]},${H - PAD} L${pts[0][0]},${H - PAD} Z`;
+
+  // 4 evenly spaced ticks across the real dollar range
+  const ticks = [0, 1, 2, 3].map((i) => lo + (span * i) / 3);
+  const last = series.at(-1);
+  const up = last >= 0;
+
+  return (
+    <div style={{ marginTop: 14, padding: 18, borderRadius: 24, ...glass('soft', { borderRadius: 24 }) }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontFamily: FONT.mono, fontSize: 11, letterSpacing: '1.5px', color: 'rgba(247,247,245,0.55)' }}>
+          EST. PROFIT OVER TIME
+        </span>
+        <span style={{ fontFamily: FONT.black, fontSize: 13, color: up ? COLOR.green : COLOR.red }}>
+          {(up ? '+' : '−') + fmtMoneyShort(Math.abs(last))}
+        </span>
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ marginTop: 12, display: 'block' }}>
+        <defs>
+          <linearGradient id="pnlStroke" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#35C99B" />
+            <stop offset="1" stopColor="#3EE6C6" />
+          </linearGradient>
+          <linearGradient id="pnlFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#2BB98D" stopOpacity="0.4" />
+            <stop offset="1" stopColor="#123B2E" stopOpacity="0.05" />
+          </linearGradient>
+        </defs>
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={L} y1={y(t)} x2={W - PAD} y2={y(t)} stroke="rgba(247,247,245,0.07)" strokeWidth="1" />
+            <text x={L - 7} y={y(t) + 3} textAnchor="end" fontSize="9" fontWeight="700" fill="rgba(247,247,245,0.45)" fontFamily="Archivo, sans-serif">
+              {fmtMoneyShort(t)}
+            </text>
+          </g>
+        ))}
+        {lo < 0 && <line x1={L} y1={y(0)} x2={W - PAD} y2={y(0)} stroke="rgba(247,247,245,0.28)" strokeWidth="1" strokeDasharray="4 4" />}
+        <path d={area} fill="url(#pnlFill)" />
+        <path d={line} fill="none" stroke="url(#pnlStroke)" strokeWidth="2.6" strokeLinecap="round" />
+        <circle cx={pts.at(-1)[0]} cy={pts.at(-1)[1]} r="4.5" fill="#3EE6C6" />
+        <circle cx={pts.at(-1)[0]} cy={pts.at(-1)[1]} r="9" fill="#3EE6C6" opacity="0.2" />
+      </svg>
+      <div style={{ marginTop: 8, fontFamily: FONT.mono, fontSize: 9, letterSpacing: '0.5px', color: 'rgba(247,247,245,0.35)' }}>
+        Weekly mark-to-market of disclosed buys (bracket midpoints) · sells not modelled
+      </div>
     </div>
   );
 }
@@ -167,7 +252,7 @@ export default function Profile({ profile, onBack, onToggleMetric, isFollowed, o
         </div>
       </div>
 
-      <RoiBars bars={profile.roiBars} />
+      {profile.pnlSeries ? <PnlChart series={profile.pnlSeries} /> : <RoiBars bars={profile.roiBars} />}
 
       <div style={{ marginTop: 14, padding: '6px 0', borderRadius: 24, ...glass('soft', { borderRadius: 24 }) }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px 12px' }}>
