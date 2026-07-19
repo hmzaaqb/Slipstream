@@ -189,23 +189,29 @@ async function collectHouse() {
 async function yahooDaily(symbol) {
   const ysym = symbol.replace(/\./g, '-');
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ysym)}?range=2y&interval=1d`;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
-    if (res.status === 429) {
-      await sleep(4000);
-      continue;
+  // Network errors (ECONNRESET etc.) and 429s both get retried with backoff —
+  // one dropped connection must not kill a 10-minute build.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+      if (res.status === 429) {
+        await sleep(4000 * (attempt + 1));
+        continue;
+      }
+      if (!res.ok) return null;
+      const j = await res.json();
+      const r = j.chart?.result?.[0];
+      if (!r?.timestamp?.length) return null;
+      const closes = r.indicators?.quote?.[0]?.close || [];
+      const out = [];
+      for (let i = 0; i < r.timestamp.length; i++) {
+        if (closes[i] == null) continue;
+        out.push({ date: new Date(r.timestamp[i] * 1000).toISOString().slice(0, 10), close: +closes[i].toFixed(4) });
+      }
+      return out.length ? out : null;
+    } catch {
+      await sleep(2000 * (attempt + 1));
     }
-    if (!res.ok) return null;
-    const j = await res.json();
-    const r = j.chart?.result?.[0];
-    if (!r?.timestamp?.length) return null;
-    const closes = r.indicators?.quote?.[0]?.close || [];
-    const out = [];
-    for (let i = 0; i < r.timestamp.length; i++) {
-      if (closes[i] == null) continue;
-      out.push({ date: new Date(r.timestamp[i] * 1000).toISOString().slice(0, 10), close: +closes[i].toFixed(4) });
-    }
-    return out.length ? out : null;
   }
   return null;
 }
@@ -274,42 +280,68 @@ function closeAtOrBefore(series, date) {
 
 /**
  * For each politician: estimated dollars made, over time, from their disclosed
- * buys — Σ amountMid × (close(t)/entry − 1) across positions open by t.
- * Weekly samples + today. Real math from real closes; sells are not modelled
- * (consistent with the app's ROI figure, and stated in the UI caption).
+ * trades. Sell-aware FIFO model (mirrors src/api.js computeReturns): buys open
+ * dollar lots at the entry close; sells close open dollars oldest-first at the
+ * sale-date close, locking in realized P/L; open lots are marked to the sample
+ * date's close. Weekly samples + today. Real math from real daily closes.
  */
 function buildPnlCurves(trades, seriesBySym) {
-  const byPol = new Map();
+  const byPol = new Map(); // name -> chronological events
   for (const t of trades) {
-    if (t.type !== 'buy' || !t.symbol || !t.transactionDate) continue;
-    const series = seriesBySym.get(t.symbol);
-    if (!series) continue;
-    const entryPt = series.find((p) => p.date >= t.transactionDate);
-    if (!entryPt || entryPt.close <= 0) continue;
+    if (!t.symbol || !t.transactionDate || !seriesBySym.has(t.symbol)) continue;
     if (!byPol.has(t.name)) byPol.set(t.name, []);
-    byPol.get(t.name).push({ symbol: t.symbol, date: entryPt.date, entry: entryPt.close, weight: t.amountMid });
+    byPol.get(t.name).push(t);
   }
 
   const today = new Date().toISOString().slice(0, 10);
   const pnl = {};
-  for (const [name, positions] of byPol) {
-    const start = positions.reduce((a, p) => (p.date < a ? p.date : a), today);
-    // weekly sample dates from first entry to today
+  for (const [name, events] of byPol) {
+    events.sort((a, b) => (a.transactionDate < b.transactionDate ? -1 : 1));
+    const start = events[0].transactionDate;
     const dates = [];
     for (let d = new Date(start); d < new Date(today); d.setDate(d.getDate() + 7)) {
       dates.push(d.toISOString().slice(0, 10));
     }
     dates.push(today);
+
+    // Walk events once, sampling weekly. State carries between samples.
+    const lots = new Map(); // symbol -> [{dollars, entry}]
+    let realized = 0;
+    let hadBuy = false;
+    let ei = 0;
     const series = dates.map((d) => {
-      let v = 0;
-      for (const p of positions) {
-        if (p.date > d) continue;
-        const close = closeAtOrBefore(seriesBySym.get(p.symbol), d);
-        if (close != null) v += p.weight * (close / p.entry - 1);
+      while (ei < events.length && events[ei].transactionDate <= d) {
+        const t = events[ei++];
+        const series_ = seriesBySym.get(t.symbol);
+        const px = series_.find((p) => p.date >= t.transactionDate)?.close;
+        if (!px || px <= 0) continue;
+        if (t.type === 'buy') {
+          if (!lots.has(t.symbol)) lots.set(t.symbol, []);
+          lots.get(t.symbol).push({ dollars: Math.max(1, t.amountMid), entry: px });
+          hadBuy = true;
+        } else {
+          const book = lots.get(t.symbol);
+          if (!book) continue; // sell with no disclosed buy: entry unknowable
+          let toClose = Math.max(1, t.amountMid);
+          while (toClose > 0 && book.length) {
+            const lot = book[0];
+            const closed = Math.min(lot.dollars, toClose);
+            realized += closed * (px / lot.entry - 1);
+            lot.dollars -= closed;
+            toClose -= closed;
+            if (lot.dollars <= 0) book.shift();
+          }
+        }
       }
-      return Math.round(v);
+      let unrealized = 0;
+      for (const [sym, book] of lots) {
+        const close = closeAtOrBefore(seriesBySym.get(sym), d);
+        if (close == null) continue;
+        for (const lot of book) unrealized += lot.dollars * (close / lot.entry - 1);
+      }
+      return Math.round(realized + unrealized);
     });
-    if (series.length >= 2) pnl[name] = series;
+    if (series.length >= 2 && hadBuy) pnl[name] = series;
   }
   console.log(`P/L curves: ${Object.keys(pnl).length} politicians`);
   return pnl;

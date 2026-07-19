@@ -142,7 +142,7 @@ export default function App() {
     let alive = true;
     (async () => {
       try {
-        const { trades, source, generatedAt, coverage } = await getTrades();
+        const { trades, source, generatedAt, coverage } = await getTrades({ force: reloadTick > 0 });
         if (!alive) return;
         setTrades(trades);
         setSource(source);
@@ -151,7 +151,7 @@ export default function App() {
         setLoading(false);
 
         const symbols = trades.map((t) => t.symbol);
-        const pm = await getPriceMap(symbols);
+        const pm = await getPriceMap(symbols, { force: reloadTick > 0 });
         if (!alive) return;
         setPriceMap(pm);
         setPricesLoading(false);
@@ -216,6 +216,15 @@ export default function App() {
   // Derived: the chart is stale whenever the fetched range trails the selection.
   const historyLoading = connected && history?.range !== period;
 
+  // Manual data refresh (SourceLine tap): re-runs the load effect with force,
+  // so caches and the module-cached snapshot are bypassed.
+  const refreshData = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setPricesLoading(true);
+    setReloadTick((t) => t + 1);
+  }, []);
+
   /* ----- derived data ----- */
   const politicians = useMemo(() => buildPoliticians(trades, priceMap), [trades, priceMap]);
   const politicianByName = useMemo(() => new Map(politicians.map((p) => [p.name, p])), [politicians]);
@@ -240,21 +249,50 @@ export default function App() {
     [followedNames, politicianByName],
   );
 
-  /* ----- handlers ----- */
-  const openProfile = useCallback((pol) => {
-    if (!pol) return;
-    setSelectedName(pol.name);
-    setTab('profile');
+  /* ----- navigation, backed by browser history ----- */
+  // Every in-app navigation pushes a history entry, so the browser/Android
+  // back button walks back through screens instead of exiting the app.
+  // popstate-driven changes must NOT push again — hence the split between
+  // navigate() (user taps) and the listener (back/forward).
+  const navigate = useCallback((nextTab, name = null) => {
+    setTab(nextTab);
+    setSelectedName(name);
+    try {
+      window.history.pushState({ tab: nextTab, name }, '');
+    } catch {
+      /* history may be unavailable in odd embeds; nav still works */
+    }
   }, []);
+
+  useEffect(() => {
+    try {
+      window.history.replaceState({ tab: 'home', name: null }, '');
+    } catch {
+      /* ignore */
+    }
+    const onPop = (e) => {
+      const s = e.state || { tab: 'home', name: null };
+      setTab(s.tab || 'home');
+      setSelectedName(s.name || null);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  /* ----- handlers ----- */
+  const openProfile = useCallback(
+    (pol) => {
+      if (!pol) return;
+      navigate('profile', pol.name);
+    },
+    [navigate],
+  );
 
   const openProfileByName = useCallback(
     (name) => {
-      if (politicianByName.has(name)) {
-        setSelectedName(name);
-        setTab('profile');
-      }
+      if (politicianByName.has(name)) navigate('profile', name);
     },
-    [politicianByName],
+    [politicianByName, navigate],
   );
 
   const toggleFollowName = useCallback((name) => {
@@ -407,11 +445,12 @@ export default function App() {
                 updatedLabel={updatedLabel}
                 polCount={politicians.length}
                 tradeCount={trades.length}
-                onGoPoliticians={() => setTab('leaders')}
-                onGoCopy={() => setTab('copy')}
-                onGoPortfolio={() => setTab('portfolio')}
+                onGoPoliticians={() => navigate('leaders')}
+                onGoCopy={() => navigate('copy')}
+                onGoPortfolio={() => navigate('portfolio')}
                 onOpenProfile={openProfile}
                 onOpenProfileByName={openProfileByName}
+                onRefresh={refreshData}
               />
             )}
 
@@ -453,7 +492,7 @@ export default function App() {
                 onOpenProfile={openProfile}
                 mirroringOn={mirroringOn}
                 setMirroringOn={setMirroringOn}
-                onGoPoliticians={() => setTab('leaders')}
+                onGoPoliticians={() => navigate('leaders')}
               />
             )}
 
@@ -469,7 +508,7 @@ export default function App() {
                 setPeriod={setPeriod}
                 followed={followed}
                 onRefresh={onRefreshAccount}
-                onGoCopy={() => setTab('copy')}
+                onGoCopy={() => navigate('copy')}
               />
             )}
 
@@ -483,7 +522,7 @@ export default function App() {
                 polCount={politicians.length}
                 source={source}
                 onDisconnect={onDisconnect}
-                onGoCopy={() => setTab('copy')}
+                onGoCopy={() => navigate('copy')}
                 onSignOut={onSignOut}
               />
             )}
@@ -491,7 +530,7 @@ export default function App() {
             {tab === 'profile' && (
               <Profile
                 profile={profile}
-                onBack={() => setTab('leaders')}
+                onBack={() => navigate('leaders')}
                 onToggleMetric={() => setMetric((m) => (m === 'roi' ? 'sp' : 'roi'))}
                 isFollowed={selectedName ? followedNames.includes(selectedName) : false}
                 onToggleFollow={toggleFollow}
@@ -502,7 +541,7 @@ export default function App() {
         )}
       </div>
 
-      <BottomNav tab={tab === 'profile' ? 'leaders' : tab} setTab={setTab} />
+      <BottomNav tab={tab === 'profile' ? 'leaders' : tab} setTab={navigate} />
     </div>
   );
 }

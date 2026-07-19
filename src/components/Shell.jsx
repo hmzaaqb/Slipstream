@@ -109,11 +109,17 @@ export function DemoBanner({ source }) {
 
 // Data provenance strip — keeps "where did this come from" visible without a
 // full header block.
-export function SourceLine({ source, updatedLabel, coverage }) {
+export function SourceLine({ source, updatedLabel, coverage, onRefresh }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: FONT.archivo, fontWeight: 600, fontSize: 11, color: COLOR.dim, marginTop: 10 }}>
+    <div
+      onClick={onRefresh}
+      role={onRefresh ? 'button' : undefined}
+      title={onRefresh ? 'Refresh data' : undefined}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: FONT.archivo, fontWeight: 600, fontSize: 11, color: COLOR.dim, marginTop: 10, cursor: onRefresh ? 'pointer' : 'default' }}
+    >
       <RefreshIcon />
       {updatedLabel}
+      {onRefresh && <span style={{ color: COLOR.goldSoft }}>· tap to refresh</span>}
       {source === 'sample' && <span style={{ color: COLOR.goldSoft }}>· demo data</span>}
       {source === 'snapshot' && (
         <span style={{ color: COLOR.green }}>· real {coverage || 'House'} filings</span>

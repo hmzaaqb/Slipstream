@@ -6,8 +6,10 @@
 
 let _promise = null;
 
-export function loadSnapshot() {
-  if (_promise) return _promise;
+export function loadSnapshot({ force = false } = {}) {
+  // force: refetch the file — the CI job commits fresh snapshots twice a day,
+  // so a deployed app can pick up new filings without a reload.
+  if (_promise && !force) return _promise;
   _promise = (async () => {
     try {
       const res = await fetch(`${import.meta.env.BASE_URL}data/snapshot.json`);

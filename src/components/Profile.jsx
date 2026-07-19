@@ -133,7 +133,7 @@ function PnlChart({ series }) {
         <circle cx={pts.at(-1)[0]} cy={pts.at(-1)[1]} r="9" fill="#3EE6C6" opacity="0.2" />
       </svg>
       <div style={{ marginTop: 8, fontFamily: FONT.mono, fontSize: 9, letterSpacing: '0.5px', color: 'rgba(247,247,245,0.35)' }}>
-        Weekly mark-to-market of disclosed buys (bracket midpoints) · sells not modelled
+        Weekly mark-to-market of disclosed trades (bracket midpoints) · sells lock in gains/losses at the sale date
       </div>
     </div>
   );

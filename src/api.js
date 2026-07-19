@@ -299,7 +299,7 @@ export async function getTrades({ force = false } = {}) {
   // Bundled snapshot next: real filings scraped at build time (see
   // scripts/ingest/build-snapshot.mjs). Real data — just as-of the build,
   // so generatedAt reflects when it was scraped, not now.
-  const snap = await loadSnapshot();
+  const snap = await loadSnapshot({ force });
   if (snap) {
     _pnlByName = snap.pnl || null;
     return {
@@ -390,10 +390,10 @@ async function fetchHistory(symbol) {
 
 // Build a price map for the given symbols. Concurrency-limited; failures are
 // simply absent from the returned map (callers treat that as "no ROI").
-export async function getPriceMap(symbols) {
+export async function getPriceMap(symbols, { force = false } = {}) {
   // Snapshot prices first: REAL entry + latest closes fetched at build time
   // for exactly the symbols the scraped trades contain. Makes ROI genuine.
-  const snap = await loadSnapshot();
+  const snap = await loadSnapshot({ force });
   if (snap?.prices && Object.keys(snap.prices).length) return snapshotPriceMap(snap);
 
   // Demo mode: synthetic, deterministic price histories so every metric renders
@@ -422,39 +422,84 @@ function priceOnOrAfter(history, dateStr) {
 }
 
 // Returns { roi, sp, winRate, scored } for a politician's trades using prices.
+//
+// Sell-aware FIFO model. Buys open dollar lots at the entry close; sells close
+// open dollars (oldest first) at the sale-date close, locking in a REALIZED
+// return — a position sold at a loss stays a loss, instead of being marked to
+// today's price forever. Whatever remains open is UNREALIZED at the latest
+// close. ROI = total P/L over total dollars deployed. "vs S&P" runs SPY
+// through the identical entry/exit dates and weights. Sells with no prior
+// disclosed buy are skipped (the entry price is unknowable from filings).
 function computeReturns(trades, priceMap) {
   const spy = priceMap.get('SPY');
-  let wSum = 0;
-  let roiAcc = 0;
-  let spAcc = 0;
-  let wins = 0;
-  let scored = 0;
+  const spyAt = (date) => (spy ? priceOnOrAfter(spy.history, date) : null);
 
-  for (const t of trades) {
-    if (t.type !== 'buy') continue;
+  // chronological, per-symbol lot books
+  const ordered = trades
+    .filter((t) => t.symbol && t.transactionDate)
+    .slice()
+    .sort((a, b) => new Date(a.transactionDate) - new Date(b.transactionDate));
+
+  const lots = new Map(); // symbol -> [{dollars, entry, spyEntry}]
+  let deployed = 0;
+  let pnl = 0; // dollars, realized + unrealized
+  let spPnl = 0; // dollar alpha vs SPY on the same flows
+  let wins = 0;
+  let scored = 0; // one outcome per realized close + per open lot remainder
+
+  for (const t of ordered) {
     const px = priceMap.get(t.symbol);
     if (!px) continue;
-    const entry = priceOnOrAfter(px.history, t.transactionDate);
-    if (!entry || entry <= 0) continue;
-    const ret = px.last / entry - 1;
-    const weight = Math.max(1, t.amountMid);
-    roiAcc += ret * weight;
-    if (spy) {
-      const spyEntry = priceOnOrAfter(spy.history, t.transactionDate);
-      if (spyEntry && spyEntry > 0) {
-        const spyRet = spy.last / spyEntry - 1;
-        spAcc += (ret - spyRet) * weight;
-      }
+
+    if (t.type === 'buy') {
+      const entry = priceOnOrAfter(px.history, t.transactionDate);
+      if (!entry || entry <= 0) continue;
+      const dollars = Math.max(1, t.amountMid);
+      if (!lots.has(t.symbol)) lots.set(t.symbol, []);
+      lots.get(t.symbol).push({ dollars, entry, spyEntry: spyAt(t.transactionDate) });
+      deployed += dollars;
+      continue;
     }
-    wSum += weight;
-    if (ret > 0) wins++;
-    scored++;
+
+    // sell: close open dollars FIFO at the sale-date close
+    const book = lots.get(t.symbol);
+    if (!book || !book.length) continue;
+    const exit = priceOnOrAfter(px.history, t.transactionDate);
+    if (!exit || exit <= 0) continue;
+    const spyExit = spyAt(t.transactionDate);
+    let toClose = Math.max(1, t.amountMid);
+    while (toClose > 0 && book.length) {
+      const lot = book[0];
+      const closed = Math.min(lot.dollars, toClose);
+      const ret = exit / lot.entry - 1;
+      pnl += closed * ret;
+      if (spyExit && lot.spyEntry) spPnl += closed * (ret - (spyExit / lot.spyEntry - 1));
+      wins += ret > 0 ? 1 : 0;
+      scored++;
+      lot.dollars -= closed;
+      toClose -= closed;
+      if (lot.dollars <= 0) book.shift();
+    }
   }
 
-  if (scored === 0 || wSum === 0) return { roi: null, sp: null, winRate: null, scored: 0 };
+  // remaining open lots: unrealized at the latest close
+  for (const [sym, book] of lots) {
+    const px = priceMap.get(sym);
+    if (!px) continue;
+    for (const lot of book) {
+      if (lot.dollars <= 0) continue;
+      const ret = px.last / lot.entry - 1;
+      pnl += lot.dollars * ret;
+      if (spy && lot.spyEntry) spPnl += lot.dollars * (ret - (spy.last / lot.spyEntry - 1));
+      wins += ret > 0 ? 1 : 0;
+      scored++;
+    }
+  }
+
+  if (scored === 0 || deployed === 0) return { roi: null, sp: null, winRate: null, scored: 0 };
   return {
-    roi: roiAcc / wSum,
-    sp: spAcc / wSum,
+    roi: pnl / deployed,
+    sp: spPnl / deployed,
     winRate: wins / scored,
     scored,
   };

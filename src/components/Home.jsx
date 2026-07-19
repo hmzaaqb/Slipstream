@@ -174,6 +174,7 @@ export default function Home({
   onGoPortfolio,
   onOpenProfile,
   onOpenProfileByName,
+  onRefresh,
 }) {
   // How many disclosure rows are visible; "Show more" grows it.
   const [feedCount, setFeedCount] = useState(8);
@@ -242,7 +243,7 @@ export default function Home({
         </button>
       )}
 
-      <SourceLine source={source} coverage={coverage} updatedLabel={updatedLabel} />
+      <SourceLine source={source} coverage={coverage} updatedLabel={updatedLabel} onRefresh={onRefresh} />
     </div>
   );
 }
