@@ -10,6 +10,8 @@ import {
   buildProfile,
   timeAgo,
 } from './api';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import * as alpaca from './alpaca';
 import * as auth from './auth';
 import { hasSupabase } from './supabase';
@@ -27,6 +29,7 @@ import { FONT, COLOR } from './ui/styles';
 const FOLLOW_KEY = 'slipstream.followed';
 const MIRROR_KEY = 'slipstream.mirroring';
 const AMOUNT_KEY = 'slipstream.mirrorAmount';
+const ORDERS_KEY = 'slipstream.orders';
 
 // Mirror order sizing: user-configurable, clamped to sane paper-trading bounds.
 const AMOUNT_MIN = 1;
@@ -53,6 +56,13 @@ const loadMirroring = () => {
     return localStorage.getItem(MIRROR_KEY) !== 'off';
   } catch {
     return true;
+  }
+};
+const loadOrders = () => {
+  try {
+    return JSON.parse(localStorage.getItem(ORDERS_KEY) || '{}');
+  } catch {
+    return {};
   }
 };
 
@@ -117,7 +127,23 @@ export default function App() {
   const [period, setPeriod] = useState('1M');
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState(null);
-  const [orderState, setOrderState] = useState({});
+  // Keyed by `${politicianName}:${trade.id}` — trade.id is unique per disclosed
+  // transaction, not per symbol, so a politician's buy and later sell of the
+  // same stock (or two separate buys) are tracked as independent mirrors
+  // rather than colliding on one entry. Persisted so mirror history survives
+  // an app restart instead of resurfacing already-mirrored trades as new.
+  const [orderState, setOrderStateRaw] = useState(loadOrders);
+  const setOrderState = useCallback((updater) => {
+    setOrderStateRaw((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        localStorage.setItem(ORDERS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
   const [mirroringOn, setMirroringOnRaw] = useState(loadMirroring);
   const [mirrorAmount, setMirrorAmountRaw] = useState(loadMirrorAmount);
 
@@ -250,6 +276,44 @@ export default function App() {
     setPricesLoading(true);
     setReloadTick((t) => t + 1);
   }, []);
+
+  // Foreground refresh: the app previously only ever fetched once, at launch.
+  // Since CI republishes the snapshot twice daily, a session left open (or
+  // reopened) could sit hours stale. Re-check whenever the app becomes
+  // visible again, throttled so rapid tab/app switching doesn't hammer it,
+  // plus a periodic sweep for sessions left open continuously.
+  useEffect(() => {
+    let lastRefresh = Date.now();
+    const THROTTLE_MS = 5 * 60 * 1000; // don't refresh more than once per 5 min
+    const INTERVAL_MS = 15 * 60 * 1000; // sweep every 15 min while foregrounded
+
+    const maybeRefresh = () => {
+      if (Date.now() - lastRefresh < THROTTLE_MS) return;
+      lastRefresh = Date.now();
+      refreshData();
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') maybeRefresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    // 'resume' fires on Android when the app returns to the foreground;
+    // visibilitychange alone isn't reliable inside a native WebView.
+    let removeResumeListener = () => {};
+    if (Capacitor.getPlatform() !== 'web') {
+      const sub = CapacitorApp.addListener('resume', maybeRefresh);
+      removeResumeListener = () => sub.remove();
+    }
+
+    const interval = setInterval(maybeRefresh, INTERVAL_MS);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      removeResumeListener();
+      clearInterval(interval);
+    };
+  }, [refreshData]);
 
   /* ----- derived data ----- */
   const politicians = useMemo(() => buildPoliticians(trades, priceMap), [trades, priceMap]);
@@ -390,17 +454,34 @@ export default function App() {
 
   const onMirror = useCallback(
     (pol, trade) => {
-      const key = `${pol.name}:${trade.symbol}`;
+      const key = `${pol.name}:${trade.id}`;
+      const isSell = trade.type === 'sell';
+
+      // A sell can only mirror a position we actually hold — there is nothing
+      // to sell otherwise, and no defensible dollar amount to send Alpaca.
+      // Cap at the smaller of the configured amount and the held value, so
+      // "mirror this sell" never oversells past what the account is holding.
+      let notional = mirrorAmount;
+      if (isSell) {
+        const held = positions.find((p) => p.symbol === trade.symbol);
+        const heldValue = held ? Number(held.market_value) : 0;
+        if (!heldValue || heldValue <= 0) {
+          setOrderState((s) => ({ ...s, [key]: 'error' }));
+          return;
+        }
+        notional = Math.min(mirrorAmount, heldValue);
+      }
+
       setOrderState((s) => ({ ...s, [key]: 'pending' }));
       alpaca
-        .placeOrder({ symbol: trade.symbol, side: 'buy', notional: mirrorAmount })
+        .placeOrder({ symbol: trade.symbol, side: isSell ? 'sell' : 'buy', notional })
         .then(() => {
           setOrderState((s) => ({ ...s, [key]: 'done' }));
           onRefreshAccount();
         })
         .catch(() => setOrderState((s) => ({ ...s, [key]: 'error' })));
     },
-    [onRefreshAccount, mirrorAmount],
+    [onRefreshAccount, mirrorAmount, positions, setOrderState],
   );
 
   const onSignOut = useCallback(async () => {

@@ -175,12 +175,14 @@ function AccountStrip({ account, positions, onRefresh, onDisconnect }) {
   );
 }
 
-// The design's "awaiting confirmation" card: the most recent buy disclosed by
-// a followed politician that hasn't been mirrored yet.
+// The design's "awaiting confirmation" card: the most recent disclosure by a
+// followed politician that hasn't been mirrored yet (a buy, or a sell of
+// something the account currently holds).
 function NextCandidate({ candidate, canMirror, onRequestMirror, amount }) {
   if (!candidate) return null;
   const { pol, trade } = candidate;
-  const tag = sideTag(true);
+  const isSell = trade.type === 'sell';
+  const tag = sideTag(!isSell);
   return (
     <div style={{ marginTop: 12, padding: 18, borderRadius: 20, ...glass('strong', { borderRadius: 20 }) }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -194,7 +196,7 @@ function NextCandidate({ candidate, canMirror, onRequestMirror, amount }) {
             {pol.name} · disclosed {timeAgo(trade.disclosureDate).toLowerCase()}
           </div>
         </div>
-        <span style={tag.style}>BUY</span>
+        <span style={tag.style}>{isSell ? 'SELL' : 'BUY'}</span>
       </div>
 
       <div style={{ display: 'flex', gap: 16, marginTop: 14, paddingTop: 13, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
@@ -210,12 +212,14 @@ function NextCandidate({ candidate, canMirror, onRequestMirror, amount }) {
         </div>
         <div>
           <div style={label()}>YOUR ORDER</div>
-          <div style={{ fontFamily: FONT.archivo, fontWeight: 700, fontSize: 14, marginTop: 3 }}>${amount}.00</div>
+          <div style={{ fontFamily: FONT.archivo, fontWeight: 700, fontSize: 14, marginTop: 3 }}>up to ${amount}</div>
         </div>
       </div>
 
       <div style={{ fontFamily: FONT.archivo, fontWeight: 500, fontSize: 11, lineHeight: 1.5, color: COLOR.dim, marginTop: 12 }}>
-        Disclosures are delayed. Your execution price will differ from the politician's original trade.
+        {isSell
+          ? "Sells close up to your configured amount of what you currently hold — never more than your position."
+          : "Disclosures are delayed. Your execution price will differ from the politician's original trade."}
       </div>
 
       <button
@@ -229,8 +233,13 @@ function NextCandidate({ candidate, canMirror, onRequestMirror, amount }) {
   );
 }
 
-function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfile, amount }) {
-  const recentBuys = pol.trades.filter((t) => t.type === 'buy' && t.symbol).slice(0, 4);
+function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfile, amount, heldSymbols }) {
+  // Buys are always mirrorable. Sells are only offered when the account
+  // actually holds that symbol — mirroring a sell of something never bought
+  // here has no position to close.
+  const recentActions = pol.trades
+    .filter((t) => t.symbol && (t.type === 'buy' || heldSymbols.has(t.symbol)))
+    .slice(0, 4);
   const mirrored = Object.keys(orderState).filter((k) => k.startsWith(`${pol.name}:`) && orderState[k] === 'done').length;
 
   return (
@@ -249,12 +258,14 @@ function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfi
       </div>
 
       <div style={{ marginTop: 13, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {recentBuys.length === 0 ? (
-          <span style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 11.5, color: COLOR.dim }}>No recent buys to mirror.</span>
+        {recentActions.length === 0 ? (
+          <span style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 11.5, color: COLOR.dim }}>No recent trades to mirror.</span>
         ) : (
-          recentBuys.map((t) => {
-            const st = orderState[`${pol.name}:${t.symbol}`];
+          recentActions.map((t) => {
+            const key = `${pol.name}:${t.id}`;
+            const st = orderState[key];
             const done = st === 'done';
+            const isSell = t.type === 'sell';
             return (
               <button
                 key={t.id}
@@ -267,7 +278,7 @@ function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfi
                   padding: '9px 12px',
                   borderRadius: 12,
                   cursor: !canMirror || st ? 'default' : 'pointer',
-                  border: `1px solid ${done ? 'rgba(66,201,137,0.45)' : COLOR.hairlineStrong}`,
+                  border: `1px solid ${done ? 'rgba(66,201,137,0.45)' : isSell ? 'rgba(240,100,110,0.3)' : COLOR.hairlineStrong}`,
                   background: done ? 'rgba(66,201,137,0.12)' : COLOR.elevated,
                   color: done ? COLOR.green : COLOR.text,
                   fontFamily: FONT.archivo,
@@ -276,6 +287,7 @@ function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfi
                   opacity: canMirror ? 1 : 0.5,
                 }}
               >
+                <span style={{ color: isSell ? COLOR.red : COLOR.green, fontSize: 9 }}>{isSell ? 'SELL' : 'BUY'}</span>
                 {t.symbol}
                 <span style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 10, color: done ? COLOR.green : COLOR.dim }}>
                   {st === 'pending' ? '…' : done ? '✓ filled' : st === 'error' ? '✕ error' : `$${amount}`}
@@ -292,10 +304,18 @@ function StrategyCard({ pol, orderState, canMirror, onRequestMirror, onOpenProfi
 // Confirmation gate shown before any order is placed. Even though this is paper
 // trading today, the same flow protects users if live trading is ever enabled —
 // no order goes out without an explicit, informed confirmation.
-function MirrorConfirm({ pending, onCancel, onConfirm, amount, buyingPower }) {
+function MirrorConfirm({ pending, onCancel, onConfirm, amount, buyingPower, heldValue }) {
   const [ack, setAck] = useState(false);
   if (!pending) return null;
   const { pol, trade } = pending;
+  const isSell = trade.type === 'sell';
+  // Buys are capped by buying power; sells are capped by what's actually
+  // held — different constraints, so each only applies to its own side.
+  const insufficientBuyingPower = !isSell && buyingPower != null && amount > buyingPower;
+  const nothingToSell = isSell && (!heldValue || heldValue <= 0);
+  const sellAmount = isSell ? Math.min(amount, heldValue || 0) : amount;
+  const blocked = insufficientBuyingPower || nothingToSell;
+
   return (
     <div onClick={onCancel} style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 430, maxWidth: '100%', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: '22px 24px 30px', background: '#0C0C0C', border: `1px solid ${COLOR.hairlineStrong}` }}>
@@ -305,10 +325,12 @@ function MirrorConfirm({ pending, onCancel, onConfirm, amount, buyingPower }) {
 
         <div style={label({ letterSpacing: '2px', fontSize: 10 })}>CONFIRM MIRROR ORDER</div>
         <div style={{ fontFamily: FONT.archivo, fontWeight: 800, fontSize: 22, letterSpacing: '-0.5px', marginTop: 8 }}>
-          Buy ${amount} of {trade.symbol}
+          {isSell ? `Sell $${sellAmount.toFixed(0)} of` : `Buy $${amount} of`} {trade.symbol}
         </div>
         <div style={{ fontFamily: FONT.archivo, fontWeight: 600, fontSize: 13.5, lineHeight: 1.6, color: COLOR.muted, marginTop: 8 }}>
-          Mirroring {pol.name}'s {trade.symbol} buy. This places a <strong>${amount} market order</strong> in your connected Alpaca <strong style={{ color: COLOR.green }}>paper</strong> account.
+          Mirroring {pol.name}'s {trade.symbol} {isSell ? 'sell' : 'buy'}. This places a{' '}
+          <strong>${isSell ? sellAmount.toFixed(0) : amount} market order</strong> in your connected Alpaca{' '}
+          <strong style={{ color: COLOR.green }}>paper</strong> account.
         </div>
 
         <div style={{ marginTop: 16, padding: '13px 15px', borderRadius: 14, background: 'rgba(240,100,110,0.06)', border: '1px solid rgba(240,100,110,0.28)' }}>
@@ -318,11 +340,16 @@ function MirrorConfirm({ pending, onCancel, onConfirm, amount, buyingPower }) {
           </div>
         </div>
 
-        {/* Insufficient buying power is caught here, before the order is sent,
+        {/* Both failure modes are caught here, before the order is sent,
             instead of surfacing later as an opaque ✕ error chip. */}
-        {buyingPower != null && amount > buyingPower && (
+        {insufficientBuyingPower && (
           <div style={{ marginTop: 12, fontFamily: FONT.archivo, fontWeight: 700, fontSize: 12, color: COLOR.red }}>
             ${amount} exceeds your buying power ({fmtUSD(buyingPower, { decimals: 0 })}). Lower the per-trade amount.
+          </div>
+        )}
+        {nothingToSell && (
+          <div style={{ marginTop: 12, fontFamily: FONT.archivo, fontWeight: 700, fontSize: 12, color: COLOR.red }}>
+            You don't currently hold {trade.symbol} — nothing to sell.
           </div>
         )}
 
@@ -334,9 +361,9 @@ function MirrorConfirm({ pending, onCancel, onConfirm, amount, buyingPower }) {
         <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: 15, borderRadius: 16, cursor: 'pointer', border: `1px solid ${COLOR.hairlineStrong}`, background: COLOR.elevated, color: COLOR.text, fontFamily: FONT.archivo, fontWeight: 800, fontSize: 13 }}>Cancel</button>
           <button
-            disabled={!ack || (buyingPower != null && amount > buyingPower)}
+            disabled={!ack || blocked}
             onClick={() => onConfirm(pol, trade)}
-            style={goldButton({ flex: 1, padding: 15, cursor: ack ? 'pointer' : 'not-allowed', opacity: ack && !(buyingPower != null && amount > buyingPower) ? 1 : 0.5, fontSize: 13 })}
+            style={goldButton({ flex: 1, padding: 15, cursor: ack ? 'pointer' : 'not-allowed', opacity: ack && !blocked ? 1 : 0.5, fontSize: 13 })}
           >
             Place order
           </button>
@@ -377,16 +404,25 @@ export default function Copy({
     onMirror(pol, trade);
   };
 
-  // Most recent un-mirrored buy across everyone the user follows.
+  // Symbols currently held — a sell can only mirror one of these; mirroring a
+  // sell of something never bought here has no position to close.
+  const heldSymbols = new Set((positions || []).map((p) => p.symbol));
+  const heldValueFor = (symbol) => {
+    const p = (positions || []).find((pos) => pos.symbol === symbol);
+    return p ? Number(p.market_value) : 0;
+  };
+
+  // Most recent un-mirrored disclosure across everyone the user follows — a
+  // buy, or a sell of something currently held.
   const candidate = (() => {
     let best = null;
     for (const pol of followed) {
       for (const t of pol.trades) {
-        if (t.type !== 'buy') continue;
         // Ticker-less assets (treasury bills, notes, annuities) are real
         // disclosures but can't be mirrored — there's nothing to order.
         if (!t.symbol) continue;
-        if (orderState[`${pol.name}:${t.symbol}`]) continue;
+        if (t.type === 'sell' && !heldSymbols.has(t.symbol)) continue;
+        if (orderState[`${pol.name}:${t.id}`]) continue;
         if (!best || new Date(t.disclosureDate) > new Date(best.trade.disclosureDate)) best = { pol, trade: t };
       }
     }
@@ -413,7 +449,7 @@ export default function Copy({
           {candidate ? (
             <NextCandidate candidate={candidate} canMirror={canMirror} onRequestMirror={requestMirror} amount={mirrorAmount} />
           ) : (
-            <Note>Every recent buy from the politicians you follow has already been mirrored.</Note>
+            <Note>Every recent trade from the politicians you follow has already been mirrored.</Note>
           )}
         </>
       )}
@@ -438,6 +474,7 @@ export default function Copy({
               onRequestMirror={requestMirror}
               onOpenProfile={onOpenProfile}
               amount={mirrorAmount}
+              heldSymbols={heldSymbols}
             />
           ))}
         </div>
@@ -449,7 +486,14 @@ export default function Copy({
         <LegalFooter align="left" style={{ marginTop: 10 }} />
       </div>
 
-      <MirrorConfirm pending={pending} onCancel={() => setPending(null)} onConfirm={confirmMirror} amount={mirrorAmount} buyingPower={account ? Number(account.buying_power) : null} />
+      <MirrorConfirm
+        pending={pending}
+        onCancel={() => setPending(null)}
+        onConfirm={confirmMirror}
+        amount={mirrorAmount}
+        buyingPower={account ? Number(account.buying_power) : null}
+        heldValue={pending ? heldValueFor(pending.trade.symbol) : 0}
+      />
     </div>
   );
 }
