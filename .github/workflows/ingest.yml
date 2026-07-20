@@ -48,6 +48,7 @@ jobs:
         run: node scripts/ingest/build-snapshot.mjs
 
       - name: Upsert into Supabase (only when secrets are configured)
+        continue-on-error: true # secondary path — must never block the snapshot commit below
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
