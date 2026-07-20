@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSenateHtml } from '../scripts/ingest/senate.mjs';
-import { toISODate, stateFromDistrict } from '../scripts/ingest/house.mjs';
+import { toISODate, stateFromDistrict, parseAmount } from '../scripts/ingest/house.mjs';
 
 // Trimmed from a real eFD PTR view page (Tuberville, July 2026).
 const SENATE_FIXTURE = `
@@ -61,4 +61,30 @@ test('house: stateFromDistrict', () => {
   assert.equal(stateFromDistrict('VA01'), 'VA');
   assert.equal(stateFromDistrict('mn02'), 'MN');
   assert.equal(stateFromDistrict(''), '');
+});
+
+test('house: parseAmount handles a standard bracket range', () => {
+  const { low, high } = parseAmount('$1,001 - $15,000');
+  assert.equal(low, 1001);
+  assert.equal(high, 15000);
+});
+
+test('house: parseAmount handles an exact decimal figure, not two numbers', () => {
+  // Regression: "$15.00" used to split into 15 and 0 before the decimal group
+  // was added to the amount regex — see house.mjs parseAmount.
+  const { low, high } = parseAmount('$15.00');
+  assert.equal(low, 15);
+  assert.equal(high, 15);
+});
+
+test('house: parseAmount handles the top bracket ("Over $X")', () => {
+  const { low, high } = parseAmount('Over $50,000,000');
+  assert.equal(low, 50000000);
+  assert.equal(high, 50000000);
+});
+
+test('house: parseAmount returns zeros for text with no figures', () => {
+  const { low, high } = parseAmount('');
+  assert.equal(low, 0);
+  assert.equal(high, 0);
 });
