@@ -21,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchIndex, fetchPtr, stateFromDistrict } from './house.mjs';
 import { fetchSenatePtrs } from './senate.mjs';
+import { sendPushForNewFilings } from './send-push.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CACHE_DIR = path.join(ROOT, 'scripts', 'ingest', 'cache');
@@ -153,6 +154,10 @@ async function collectHouse() {
   const index = await fetchIndex(YEAR);
   console.log(`House ${YEAR}: ${index.length} PTRs in index, ${Object.keys(cache).length} cached`);
 
+  // docIds first seen THIS run — the notification fan-out needs exactly this
+  // set, not the whole cache, or every run after a cold cache would spam
+  // every follower with months of backlog.
+  const newDocIds = new Set();
   let fetched = 0;
   for (const f of index) {
     if (cache[f.docId]) continue;
@@ -170,6 +175,7 @@ async function collectHouse() {
       continue;
     }
     cache[f.docId] = { ...entry, meta: f };
+    newDocIds.add(f.docId);
     fetched++;
     if (fetched % 25 === 0) {
       console.log(`  ...${fetched} new filings fetched`);
@@ -179,7 +185,7 @@ async function collectHouse() {
   }
   fs.writeFileSync(cachePath, JSON.stringify(cache));
   console.log(`House: ${fetched} newly fetched, cache now ${Object.keys(cache).length}`);
-  return cache;
+  return { cache, newDocIds };
 }
 
 /* ------------------------------------------------------------------ */
@@ -352,7 +358,7 @@ function buildPnlCurves(trades, seriesBySym) {
 /* ------------------------------------------------------------------ */
 
 const leg = await fetchLegislators();
-const houseCache = await collectHouse();
+const { cache: houseCache, newDocIds } = await collectHouse();
 
 let senate = { trades: [], filings: 0, skippedPaper: 0, error: null };
 try {
@@ -364,6 +370,11 @@ try {
 
 const trades = [];
 const tally = { parsed: 0, empty: 0, no_text_layer: 0 };
+// Politicians with at least one NEWLY-parsed filing this run — the exact set
+// push notifications should fan out to. A politician who only had old,
+// already-cached filings re-touched (e.g. party-resolution fixes) must NOT
+// trigger a notification.
+const newlyFiledBy = new Set();
 
 for (const [docId, entry] of Object.entries(houseCache)) {
   tally[entry.status] = (tally[entry.status] || 0) + 1;
@@ -372,11 +383,13 @@ for (const [docId, entry] of Object.entries(houseCache)) {
   const state = stateFromDistrict(f.district);
   const who = resolveParty(leg, f.first, f.last, state, 'house');
   const sourceUrl = `https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/${f.year}/${docId}.pdf`;
+  const name = displayName(f.first, f.last);
+  if (newDocIds.has(docId)) newlyFiledBy.add(name);
   entry.transactions.forEach((t, i) => {
     const company = cleanAssetName(t.asset) || t.symbol || '';
     trades.push({
       id: `${docId}:${i}`,
-      name: displayName(f.first, f.last),
+      name,
       party: who.party,
       state,
       chamber: 'house',
@@ -398,9 +411,11 @@ for (const [docId, entry] of Object.entries(houseCache)) {
 for (const t of senate.trades) {
   const who = resolveParty(leg, t.first, t.last, t.state || '', 'senate');
   const company = cleanAssetName(t.asset) || t.symbol || '';
+  const name = displayName(t.first, t.last);
+  if (t._newThisRun) newlyFiledBy.add(name);
   trades.push({
     id: t.id,
-    name: displayName(t.first, t.last),
+    name,
     party: who.party,
     state: t.state || who.state || '',
     chamber: 'senate',
@@ -454,3 +469,11 @@ const snapshot = {
 fs.writeFileSync(OUT, JSON.stringify(snapshot));
 const kb = (fs.statSync(OUT).size / 1024).toFixed(0);
 console.log(`\nwrote ${OUT} (${kb} KB)`);
+
+// Best-effort: notify devices following a politician who filed this run. Never
+// let a push failure fail the whole ingest — the snapshot is already written.
+try {
+  await sendPushForNewFilings(newlyFiledBy);
+} catch (e) {
+  console.error('[push] fan-out failed (non-fatal):', e.message);
+}

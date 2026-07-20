@@ -134,3 +134,38 @@ drop policy if exists "trades are public" on public.trades;
 create policy "trades are public"
   on public.trades for select
   using (true);
+
+-- ---------------------------------------------------------------------------
+-- device_tokens — push notification targets.
+--
+-- One row per installed app instance (keyed by FCM token, not by user — the
+-- app doesn't require login to follow politicians, so a device can subscribe
+-- anonymously). `followed` is a denormalized snapshot written by the client
+-- every time its follow list changes; the ingest job's fan-out query reads it
+-- directly rather than joining through auth. Written by the client with the
+-- anon key, so RLS only allows a row to touch itself — no read/enumerate.
+-- Only the service role (the ingest job) can read across all rows to fan out.
+-- ---------------------------------------------------------------------------
+create table if not exists public.device_tokens (
+  token text primary key,
+  platform text not null default 'android',
+  followed text[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
+alter table public.device_tokens enable row level security;
+
+drop policy if exists "device can upsert its own token" on public.device_tokens;
+create policy "device can upsert its own token"
+  on public.device_tokens for insert
+  with check (true);
+
+drop policy if exists "device can update its own token" on public.device_tokens;
+create policy "device can update its own token"
+  on public.device_tokens for update
+  using (true)
+  with check (true);
+-- Deliberately no select policy for anon/authenticated: a device can write its
+-- own row but never read the table (would otherwise leak other users' follows
+-- and enumerate tokens). The ingest job reads via the service_role key, which
+-- bypasses RLS entirely.

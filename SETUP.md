@@ -111,6 +111,38 @@ No FMP subscription is required. (The legacy FMP path still exists behind
 
 ---
 
+## 5b. Push notifications (Android)
+
+Notifies a device when a politician it follows files a new disclosure. Fully
+wired end to end, but needs two things this repo can't include for you:
+
+1. **`android/app/google-services.json`** — from your Firebase project
+   (Project settings → Your apps → Add app → Android, package name
+   `com.slipstream.app`). Already present if you're reading this after that
+   step; if missing, push silently does nothing and the rest of the app is
+   unaffected.
+2. **Three GitHub repo secrets** (Settings → Secrets and variables → Actions):
+   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — same values as step 1/3 above
+   - `FIREBASE_SERVICE_ACCOUNT_KEY` — Firebase console → Project settings →
+     Service accounts → **Generate new private key**. That downloads a JSON
+     file; base64-encode the whole file and paste the result as the secret
+     value (`base64 -w0 service-account.json`, or on Windows:
+     `[Convert]::ToBase64String([IO.File]::ReadAllBytes("service-account.json"))`
+     in PowerShell).
+
+Also run the `device_tokens` table addition in `supabase/schema.sql` (already
+included if you're applying the whole file fresh; re-run it if your project
+predates this feature — `create table if not exists` makes it safe to re-apply).
+
+Once all three secrets are set, the next scheduled ingest run
+(`.github/workflows/ingest.yml`) will fan out pushes automatically — no
+redeploy needed, it's read straight from the secrets at run time. Until then,
+`send-push.mjs` logs which politicians *would* have triggered a notification,
+so you can confirm the pipeline is finding the right filings before wiring
+Firebase.
+
+---
+
 ## 6. Deploy the frontend
 
 Any static host works (Vercel, Netlify, Cloudflare Pages):

@@ -13,6 +13,7 @@ import {
 import * as alpaca from './alpaca';
 import * as auth from './auth';
 import { hasSupabase } from './supabase';
+import { syncPushToken, onNotificationTap } from './push';
 import Auth from './components/Auth';
 import { Blooms, StatusBar, BottomNav, DemoBanner } from './components/Shell';
 import Home from './components/Home';
@@ -274,6 +275,13 @@ export default function App() {
     [followedNames, politicianByName],
   );
 
+  /* ----- push notifications (Android only; no-op on web) ----- */
+  // Re-synced whenever the follow list changes, not just once at launch, so
+  // the device_tokens row the ingest job reads is never stale.
+  useEffect(() => {
+    syncPushToken(followedNames);
+  }, [followedNames]);
+
   /* ----- navigation, backed by browser history ----- */
   // Every in-app navigation pushes a history entry, so the browser/Android
   // back button walks back through screens instead of exiting the app.
@@ -319,6 +327,13 @@ export default function App() {
     },
     [politicianByName, navigate],
   );
+
+  // Tapping a push notification opens that politician's profile. Re-subscribes
+  // whenever openProfileByName's identity changes (i.e. whenever politicians
+  // load/change) so this never holds a stale politicianByName closure.
+  useEffect(() => onNotificationTap((data) => {
+    if (data?.politician) openProfileByName(data.politician);
+  }), [openProfileByName]);
 
   const toggleFollowName = useCallback((name) => {
     if (!name) return;

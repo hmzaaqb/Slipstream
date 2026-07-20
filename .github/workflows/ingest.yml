@@ -6,6 +6,11 @@
 #
 # Optional: if SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY repo secrets are set,
 # the run also upserts into the Supabase `filings`/`trades` tables.
+#
+# Optional: if FIREBASE_SERVICE_ACCOUNT_KEY is also set (a Firebase service
+# account JSON, base64-encoded — Project settings > Service accounts >
+# Generate new private key), devices following a politician who filed this
+# run get a push notification. Silently skipped otherwise; see send-push.mjs.
 
 name: Daily data ingest
 
@@ -35,7 +40,11 @@ jobs:
 
       - run: npm ci
 
-      - name: Build data snapshot (House + Senate + prices)
+      - name: Build data snapshot (House + Senate + prices, then push fan-out)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
         run: node scripts/ingest/build-snapshot.mjs
 
       - name: Upsert into Supabase (only when secrets are configured)

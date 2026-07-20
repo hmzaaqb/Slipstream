@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "363833033602",
+    "project_id": "slipstream-3be4a",
+    "storage_bucket": "slipstream-3be4a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:363833033602:android:071a4be83e3ae8d7e4059b",
+        "android_client_info": {
+          "package_name": "com.slipstream.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDkL8EGUnTdmM44eqMas6aQWf936bviFTA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -38,4 +38,7 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+ requires this to be requested at runtime; the push plugin
+         handles the runtime prompt, this just declares the capability. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

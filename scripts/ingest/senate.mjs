@@ -165,6 +165,7 @@ export async function fetchSenatePtrs(year, { cacheDir } = {}) {
   const electronic = filings.filter((f) => f.kind === 'ptr');
   console.log(`Senate ${year}: ${filings.length} PTRs (${paper.length} paper, skipped), ${Object.keys(cache).length} cached`);
 
+  const newUuids = new Set(); // filings first seen this run, for push fan-out
   let fetched = 0;
   for (const f of electronic) {
     if (cache[f.uuid]) continue;
@@ -175,6 +176,7 @@ export async function fetchSenatePtrs(year, { cacheDir } = {}) {
       continue;
     }
     cache[f.uuid] = { meta: f, transactions: parseSenateHtml(await res.text()) };
+    newUuids.add(f.uuid);
     fetched++;
     if (cachePath && fetched % 20 === 0) fs.writeFileSync(cachePath, JSON.stringify(cache));
     await sleep(400);
@@ -194,6 +196,7 @@ export async function fetchSenatePtrs(year, { cacheDir } = {}) {
         ...t,
         disclosureDate: toISO(f.dateFiled),
         link: `${BASE}/search/view/ptr/${uuid}/`,
+        _newThisRun: newUuids.has(uuid),
       });
     });
   }
